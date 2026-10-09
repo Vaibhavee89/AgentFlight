@@ -1,4 +1,4 @@
-# pipeline-medic
+# DP-Agent
 
 An agent that diagnoses data pipeline failures (Airflow OOMs, spot interruptions, schema drift, upstream timeouts), explains the root cause in Slack, and proposes fixes that only run after human approval. Its diagnosis accuracy is measured by an eval suite against labeled synthetic failures.
 
