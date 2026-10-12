@@ -98,7 +98,3 @@ pipeline-medic/
 - [ ] Slack approval flow
 - [ ] K8s manifests
 - [ ] Eval dashboard
-
-## Disclaimer
-
-All data is synthetic. This project is not affiliated with or derived from any employer's code or systems.
