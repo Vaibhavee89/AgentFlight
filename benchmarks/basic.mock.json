@@ -1,0 +1,53 @@
+{
+  "task-01": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "add", "a": 2, "b": 3}}]},
+    {"Content": "5"}
+  ],
+  "task-02": [
+    {"ToolCalls": [{"Name": "echo", "Input": {"text": "apple"}}]},
+    {"Content": "apple"}
+  ],
+  "task-03": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "sub", "a": 10, "b": 4}}]},
+    {"ToolCalls": [{"Name": "echo", "Input": {"text": "6"}}]},
+    {"Content": "6"}
+  ],
+  "task-04": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "mul", "a": 6, "b": 7}}]},
+    {"Content": "42"}
+  ],
+  "task-05": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "div", "a": 9, "b": 3}}]},
+    {"Content": "The result is 3."}
+  ],
+  "task-06": [
+    {"ToolCalls": [{"Name": "echo", "Input": {"text": "abc def ghi"}}]},
+    {"Content": "abc def ghi"}
+  ],
+  "task-07": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "div", "a": 100, "b": 4}}]},
+    {"Content": "The answer is 25."}
+  ],
+  "task-08": [
+    {"ToolCalls": [{"Name": "echo", "Input": {"text": "Hello there!"}}]},
+    {"Content": "Hello there!"}
+  ],
+  "task-09": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "add", "a": 1, "b": 1}}]},
+    {"ToolCalls": [{"Name": "echo", "Input": {"text": "done"}}]},
+    {"Content": "done"}
+  ],
+  "task-10": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "add", "a": 5, "b": 5}}]},
+    {"Content": "10"}
+  ],
+  "task-11": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "sub", "a": 8, "b": 3}}]},
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "mul", "a": 5, "b": 2}}]},
+    {"Content": "10"}
+  ],
+  "task-12": [
+    {"ToolCalls": [{"Name": "calculator", "Input": {"operation": "div", "a": 7, "b": 0}}]},
+    {"Content": "error handled"}
+  ]
+}

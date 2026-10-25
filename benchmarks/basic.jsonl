@@ -1,0 +1,12 @@
+{"id":"task-01","prompt":"What is 2 plus 3? Reply with just the number.","tools":["calculator"],"grader":{"type":"exact_match","want":"5"},"timeout":"30s","tags":["easy","calculator"]}
+{"id":"task-02","prompt":"Echo the word apple.","tools":["echo"],"grader":{"type":"exact_match","want":"apple"},"timeout":"30s","tags":["easy","echo"]}
+{"id":"task-03","prompt":"Compute 10 minus 4, then echo the result.","tools":["calculator","echo"],"grader":{"type":"exact_match","want":"6"},"timeout":"30s","tags":["multi-step","calculator","echo"]}
+{"id":"task-04","prompt":"What does 6 times 7 equal? Reply with just the number.","tools":["calculator"],"grader":{"type":"exact_match","want":"42"},"timeout":"30s","tags":["easy","calculator"]}
+{"id":"task-05","prompt":"Divide 9 by 3 and explain the result in a short sentence.","tools":["calculator"],"grader":{"type":"contains","want":"3"},"timeout":"30s","tags":["easy","calculator"]}
+{"id":"task-06","prompt":"Echo back the start of the alphabet.","tools":["echo"],"grader":{"type":"contains","want":"abc"},"timeout":"30s","tags":["easy","echo"]}
+{"id":"task-07","prompt":"What is 100 divided by 4? Answer as a full sentence.","tools":["calculator"],"grader":{"type":"regex","want":"^The answer is \\d+\\.$"},"timeout":"30s","tags":["easy","calculator"]}
+{"id":"task-08","prompt":"Echo back a friendly greeting.","tools":["echo"],"grader":{"type":"regex","want":"(?i)^hello.*$"},"timeout":"30s","tags":["easy","echo"]}
+{"id":"task-09","prompt":"Add 1 and 1 using the calculator, then echo the word done.","tools":["calculator","echo"],"grader":{"type":"tool_called","tool":"echo"},"timeout":"30s","tags":["multi-step","calculator","echo"]}
+{"id":"task-10","prompt":"Use the calculator to add 5 and 5.","tools":["calculator"],"grader":{"type":"tool_called","tool":"calculator"},"timeout":"30s","tags":["easy","calculator"]}
+{"id":"task-11","prompt":"Compute (8 minus 3) times 2 using the calculator twice.","tools":["calculator"],"grader":{"type":"exact_match","want":"10"},"timeout":"30s","tags":["multi-step","calculator"]}
+{"id":"task-12","prompt":"Try dividing 7 by 0 with the calculator, then say the error was handled.","tools":["calculator"],"grader":{"type":"contains","want":"error handled"},"timeout":"30s","tags":["multi-step","calculator","error-handling"]}
