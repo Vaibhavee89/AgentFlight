@@ -44,7 +44,7 @@ func TestMockProvider_Complete(t *testing.T) {
 			var lastErr error
 			var lastResp ModelResponse
 			for i := 0; i < tt.calls; i++ {
-				lastResp, lastErr = p.Complete(context.Background())
+				lastResp, lastErr = p.Complete(context.Background(), Request{})
 			}
 			if tt.wantErr != nil {
 				if !errors.Is(lastErr, tt.wantErr) {
@@ -56,7 +56,7 @@ func TestMockProvider_Complete(t *testing.T) {
 				t.Fatalf("Complete() unexpected error: %v", lastErr)
 			}
 			want := tt.responses[tt.calls-1]
-			if lastResp != want {
+			if lastResp.Content != want.Content {
 				t.Fatalf("Complete() = %+v, want %+v", lastResp, want)
 			}
 		})
@@ -68,7 +68,7 @@ func TestMockProvider_CanceledContext(t *testing.T) {
 	cancel()
 
 	p := NewMockProvider([]ModelResponse{{Content: "a"}}, nil)
-	if _, err := p.Complete(ctx); !errors.Is(err, context.Canceled) {
+	if _, err := p.Complete(ctx, Request{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Complete() error = %v, want %v", err, context.Canceled)
 	}
 }
@@ -88,7 +88,7 @@ func TestMockProvider_ConcurrentUse(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := p.Complete(context.Background())
+			resp, err := p.Complete(context.Background(), Request{})
 			if err != nil {
 				t.Errorf("Complete() unexpected error: %v", err)
 				return
@@ -117,7 +117,7 @@ func TestMockProvider_ConcurrentUse(t *testing.T) {
 		}
 	}
 
-	if _, err := p.Complete(context.Background()); !errors.Is(err, ErrScriptExhausted) {
+	if _, err := p.Complete(context.Background(), Request{}); !errors.Is(err, ErrScriptExhausted) {
 		t.Fatalf("Complete() after exhaustion error = %v, want %v", err, ErrScriptExhausted)
 	}
 }

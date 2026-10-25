@@ -5,11 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/Vaibhavee89/agentflight/internal/tools"
 )
 
-// ModelResponse is a single response a provider can return for a completion call.
+// Request is the input to a model provider for one completion step.
+type Request struct {
+	Prompt      string
+	ToolResults []ToolResult
+}
+
+// ToolResult pairs a previously requested tool call with its execution outcome.
+type ToolResult struct {
+	Call   tools.ToolCall
+	Output tools.ToolOutput
+	Err    error
+}
+
+// ModelResponse is a single response a provider can return for a completion
+// call. ToolCalls is non-empty when the model wants tools executed before it
+// continues.
 type ModelResponse struct {
-	Content string
+	Content   string
+	ToolCalls []tools.ToolCall
 }
 
 // ErrScriptExhausted indicates a MockProvider has no more scripted responses or errors.
@@ -35,10 +53,11 @@ func NewMockProvider(responses []ModelResponse, errs []error) *MockProvider {
 	}
 }
 
-// Complete returns the next scripted response or error. Once the script is
+// Complete returns the next scripted response or error, ignoring the
+// content of req since the script is deterministic. Once the script is
 // exhausted it returns an error wrapping ErrScriptExhausted on every
 // subsequent call.
-func (m *MockProvider) Complete(ctx context.Context) (ModelResponse, error) {
+func (m *MockProvider) Complete(ctx context.Context, _ Request) (ModelResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return ModelResponse{}, fmt.Errorf("mock provider: %w", err)
 	}
