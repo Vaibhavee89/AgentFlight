@@ -1,2 +1,2 @@
-// Package recovery handles failure detection and retry strategies for agent runs.
+// Package recovery defines checkpoints for resuming interrupted agent runs.
 package recovery

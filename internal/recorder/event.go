@@ -22,6 +22,7 @@ const (
 	EventToolResult     EventType = "tool_result"
 	EventPolicyDecision EventType = "policy_decision"
 	EventError          EventType = "error"
+	EventCheckpoint     EventType = "checkpoint"
 )
 
 var knownEventTypes = map[EventType]struct{}{
@@ -33,6 +34,7 @@ var knownEventTypes = map[EventType]struct{}{
 	EventToolResult:     {},
 	EventPolicyDecision: {},
 	EventError:          {},
+	EventCheckpoint:     {},
 }
 
 // Event is a single, immutable occurrence in a run's event log.

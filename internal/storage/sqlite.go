@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
+	"github.com/Vaibhavee89/agentflight/internal/recovery"
 )
 
 // SQLiteStore persists recorder events to a SQLite database using the
@@ -109,4 +111,41 @@ func (s *SQLiteStore) Events(ctx context.Context, runID string) ([]recorder.Even
 		return nil, fmt.Errorf("storage: iterate events for run %s: %w", runID, err)
 	}
 	return events, nil
+}
+
+// SaveCheckpoint inserts a new checkpoint row for cp.RunID at seq cp.Step.
+func (s *SQLiteStore) SaveCheckpoint(ctx context.Context, cp recovery.Checkpoint) error {
+	data, err := json.Marshal(cp)
+	if err != nil {
+		return fmt.Errorf("storage: encode checkpoint run=%s step=%d: %w", cp.RunID, cp.Step, err)
+	}
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO checkpoints (run_id, seq, state, created_at) VALUES (?, ?, ?, ?)`,
+		cp.RunID, cp.Step, data, cp.SavedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return fmt.Errorf("storage: save checkpoint run=%s step=%d: %w", cp.RunID, cp.Step, err)
+	}
+	return nil
+}
+
+// LatestCheckpoint returns the highest-seq checkpoint saved for runID, or
+// found=false if none has been saved.
+func (s *SQLiteStore) LatestCheckpoint(ctx context.Context, runID string) (recovery.Checkpoint, bool, error) {
+	var data []byte
+	err := s.db.QueryRowContext(ctx,
+		`SELECT state FROM checkpoints WHERE run_id = ? ORDER BY seq DESC LIMIT 1`, runID,
+	).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return recovery.Checkpoint{}, false, nil
+	}
+	if err != nil {
+		return recovery.Checkpoint{}, false, fmt.Errorf("storage: load latest checkpoint for run %s: %w", runID, err)
+	}
+
+	var cp recovery.Checkpoint
+	if err := json.Unmarshal(data, &cp); err != nil {
+		return recovery.Checkpoint{}, false, fmt.Errorf("storage: decode checkpoint for run %s: %w", runID, err)
+	}
+	return cp, true, nil
 }

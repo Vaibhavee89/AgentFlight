@@ -61,7 +61,7 @@ func TestRuntime_Run_SingleTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() unexpected error: %v", err)
 	}
-	want := RunResult{RunID: "run-1", Content: "the answer", Steps: 1}
+	want := RunResult{RunID: "run-1", Content: "the answer", Steps: 1, Status: "completed"}
 	if got != want {
 		t.Fatalf("Run() = %+v, want %+v", got, want)
 	}
@@ -85,49 +85,73 @@ func TestRuntime_Run_MultiToolCallTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() unexpected error: %v", err)
 	}
-	want := RunResult{RunID: "run-2", Content: "done", Steps: 2}
+	want := RunResult{RunID: "run-2", Content: "done", Steps: 2, Status: "completed"}
 	if got != want {
 		t.Fatalf("Run() = %+v, want %+v", got, want)
 	}
 
-	wantTypes := []recorder.EventType{
-		recorder.EventRunStarted,
-		recorder.EventModelRequest,
-		recorder.EventModelResponse,
-		recorder.EventToolCall,
-		recorder.EventToolResult,
-		recorder.EventToolCall,
-		recorder.EventToolResult,
-		recorder.EventModelRequest,
-		recorder.EventModelResponse,
-		recorder.EventRunFinished,
+	// RunStarted, ModelRequest, and ModelResponse come first in order, and
+	// ModelRequest, ModelResponse, RunFinished come last; the two
+	// ToolCall/ToolResult pairs in between can interleave in either order,
+	// since tool calls within a step run concurrently.
+	if len(rec.events) != 10 {
+		t.Fatalf("recorded %d events, want 10: %+v", len(rec.events), rec.events)
 	}
-	if len(rec.events) != len(wantTypes) {
-		t.Fatalf("recorded %d events, want %d: %+v", len(rec.events), len(wantTypes), rec.events)
+	for _, e := range rec.events {
+		if e.runID != "run-2" {
+			t.Fatalf("event.runID = %q, want %q", e.runID, "run-2")
+		}
 	}
-	for i, want := range wantTypes {
+
+	wantPrefix := []recorder.EventType{recorder.EventRunStarted, recorder.EventModelRequest, recorder.EventModelResponse}
+	for i, want := range wantPrefix {
 		if rec.events[i].eventType != want {
 			t.Fatalf("event[%d].eventType = %q, want %q", i, rec.events[i].eventType, want)
 		}
-		if rec.events[i].runID != "run-2" {
-			t.Fatalf("event[%d].runID = %q, want %q", i, rec.events[i].runID, "run-2")
+	}
+	wantSuffix := []recorder.EventType{recorder.EventModelRequest, recorder.EventModelResponse, recorder.EventRunFinished}
+	for i, want := range wantSuffix {
+		idx := len(rec.events) - len(wantSuffix) + i
+		if rec.events[idx].eventType != want {
+			t.Fatalf("event[%d].eventType = %q, want %q", idx, rec.events[idx].eventType, want)
 		}
 	}
 
-	echoResult, ok := rec.events[4].payload.(toolResultPayload)
-	if !ok {
-		t.Fatalf("event[4].payload = %#v, want toolResultPayload", rec.events[4].payload)
+	var calls, results int
+	var echoFound, calcFound bool
+	for _, e := range rec.events[3:7] {
+		switch e.eventType {
+		case recorder.EventToolCall:
+			calls++
+		case recorder.EventToolResult:
+			results++
+			payload, ok := e.payload.(toolResultPayload)
+			if !ok {
+				t.Fatalf("payload = %#v, want toolResultPayload", e.payload)
+			}
+			switch payload.Name {
+			case "echo":
+				if payload.Output.Result != "hi" {
+					t.Fatalf("echo tool result = %q, want %q", payload.Output.Result, "hi")
+				}
+				echoFound = true
+			case "calculator":
+				if payload.Output.Result != "3" {
+					t.Fatalf("calculator tool result = %q, want %q", payload.Output.Result, "3")
+				}
+				calcFound = true
+			default:
+				t.Fatalf("unexpected tool result for %q", payload.Name)
+			}
+		default:
+			t.Fatalf("unexpected event type in tool-call phase: %q", e.eventType)
+		}
 	}
-	if echoResult.Output.Result != "hi" {
-		t.Fatalf("echo tool result = %q, want %q", echoResult.Output.Result, "hi")
+	if calls != 2 || results != 2 {
+		t.Fatalf("got %d tool_call and %d tool_result events, want 2 and 2", calls, results)
 	}
-
-	calcResult, ok := rec.events[6].payload.(toolResultPayload)
-	if !ok {
-		t.Fatalf("event[6].payload = %#v, want toolResultPayload", rec.events[6].payload)
-	}
-	if calcResult.Output.Result != "3" {
-		t.Fatalf("calculator tool result = %q, want %q", calcResult.Output.Result, "3")
+	if !echoFound || !calcFound {
+		t.Fatalf("missing expected tool results: echo=%v calculator=%v", echoFound, calcFound)
 	}
 }
 

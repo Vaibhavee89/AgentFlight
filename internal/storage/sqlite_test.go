@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Vaibhavee89/agentflight/internal/provider"
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
+	"github.com/Vaibhavee89/agentflight/internal/recovery"
+	"github.com/Vaibhavee89/agentflight/internal/tools"
 )
 
 func openTestStore(t *testing.T) *SQLiteStore {
@@ -88,5 +91,54 @@ func TestSQLiteStore_DuplicateSeqRejected(t *testing.T) {
 	}
 	if err := store.Append(ctx, event); err == nil {
 		t.Fatalf("Append() duplicate seq succeeded, want primary key violation")
+	}
+}
+
+func TestSQLiteStore_LatestCheckpoint_NoneSaved(t *testing.T) {
+	store := openTestStore(t)
+	_, found, err := store.LatestCheckpoint(context.Background(), "no-such-run")
+	if err != nil {
+		t.Fatalf("LatestCheckpoint() error: %v", err)
+	}
+	if found {
+		t.Fatalf("LatestCheckpoint() found = true, want false")
+	}
+}
+
+func TestSQLiteStore_SaveCheckpointAndLatestCheckpoint(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	first := recovery.Checkpoint{
+		RunID:   "run-1",
+		Step:    1,
+		Request: provider.Request{Prompt: "hi"},
+		SavedAt: time.Now().UTC(),
+	}
+	second := recovery.Checkpoint{
+		RunID:   "run-1",
+		Step:    2,
+		Request: provider.Request{Prompt: "hi", ToolResults: []provider.ToolResult{{Call: tools.ToolCall{Name: "echo"}}}},
+		SavedAt: time.Now().UTC(),
+	}
+	if err := store.SaveCheckpoint(ctx, first); err != nil {
+		t.Fatalf("SaveCheckpoint() first: %v", err)
+	}
+	if err := store.SaveCheckpoint(ctx, second); err != nil {
+		t.Fatalf("SaveCheckpoint() second: %v", err)
+	}
+
+	got, found, err := store.LatestCheckpoint(ctx, "run-1")
+	if err != nil {
+		t.Fatalf("LatestCheckpoint() error: %v", err)
+	}
+	if !found {
+		t.Fatalf("LatestCheckpoint() found = false, want true")
+	}
+	if got.Step != second.Step || got.Request.Prompt != second.Request.Prompt {
+		t.Fatalf("LatestCheckpoint() = %+v, want matching %+v", got, second)
+	}
+	if len(got.Request.ToolResults) != 1 || got.Request.ToolResults[0].Call.Name != "echo" {
+		t.Fatalf("LatestCheckpoint().Request.ToolResults = %+v, want one echo call", got.Request.ToolResults)
 	}
 }

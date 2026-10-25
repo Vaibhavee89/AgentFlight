@@ -22,4 +22,7 @@ var (
 	ErrReplayMismatch = errors.New("runtime: replay mismatch")
 	// ErrCancelled indicates the run's context was cancelled or timed out.
 	ErrCancelled = errors.New("runtime: run cancelled")
+	// ErrNoCheckpoint indicates Resume was called for a run with no saved
+	// checkpoint, or with no checkpoint store configured.
+	ErrNoCheckpoint = errors.New("runtime: no checkpoint found")
 )

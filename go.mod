@@ -2,7 +2,10 @@ module github.com/Vaibhavee89/agentflight
 
 go 1.26.0
 
-require modernc.org/sqlite v1.61.0
+require (
+	golang.org/x/sync v0.24.0
+	modernc.org/sqlite v1.61.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
