@@ -8,19 +8,26 @@ import (
 	"testing"
 
 	"github.com/Vaibhavee89/agentflight/internal/provider"
+	"github.com/Vaibhavee89/agentflight/internal/recorder"
 	"github.com/Vaibhavee89/agentflight/internal/tools"
 	"github.com/Vaibhavee89/agentflight/internal/tools/builtin"
 )
 
-type stubRecorder struct {
-	mu     sync.Mutex
-	events []Event
+type recordedEvent struct {
+	runID     string
+	eventType recorder.EventType
+	payload   any
 }
 
-func (s *stubRecorder) Record(ctx context.Context, runID string, event Event) error {
+type stubRecorder struct {
+	mu     sync.Mutex
+	events []recordedEvent
+}
+
+func (s *stubRecorder) Record(ctx context.Context, runID string, eventType recorder.EventType, payload any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, event)
+	s.events = append(s.events, recordedEvent{runID: runID, eventType: eventType, payload: payload})
 	return nil
 }
 
@@ -83,18 +90,44 @@ func TestRuntime_Run_MultiToolCallTurn(t *testing.T) {
 		t.Fatalf("Run() = %+v, want %+v", got, want)
 	}
 
-	if len(rec.events) != 2 {
-		t.Fatalf("recorded %d events, want 2", len(rec.events))
+	wantTypes := []recorder.EventType{
+		recorder.EventRunStarted,
+		recorder.EventModelRequest,
+		recorder.EventModelResponse,
+		recorder.EventToolCall,
+		recorder.EventToolResult,
+		recorder.EventToolCall,
+		recorder.EventToolResult,
+		recorder.EventModelRequest,
+		recorder.EventModelResponse,
+		recorder.EventRunFinished,
 	}
-	first := rec.events[0]
-	if len(first.ToolResults) != 2 {
-		t.Fatalf("step 0 recorded %d tool results, want 2", len(first.ToolResults))
+	if len(rec.events) != len(wantTypes) {
+		t.Fatalf("recorded %d events, want %d: %+v", len(rec.events), len(wantTypes), rec.events)
 	}
-	if first.ToolResults[0].Output.Result != "hi" {
-		t.Fatalf("echo result = %q, want %q", first.ToolResults[0].Output.Result, "hi")
+	for i, want := range wantTypes {
+		if rec.events[i].eventType != want {
+			t.Fatalf("event[%d].eventType = %q, want %q", i, rec.events[i].eventType, want)
+		}
+		if rec.events[i].runID != "run-2" {
+			t.Fatalf("event[%d].runID = %q, want %q", i, rec.events[i].runID, "run-2")
+		}
 	}
-	if first.ToolResults[1].Output.Result != "3" {
-		t.Fatalf("calculator result = %q, want %q", first.ToolResults[1].Output.Result, "3")
+
+	echoResult, ok := rec.events[4].payload.(toolResultPayload)
+	if !ok {
+		t.Fatalf("event[4].payload = %#v, want toolResultPayload", rec.events[4].payload)
+	}
+	if echoResult.Output.Result != "hi" {
+		t.Fatalf("echo tool result = %q, want %q", echoResult.Output.Result, "hi")
+	}
+
+	calcResult, ok := rec.events[6].payload.(toolResultPayload)
+	if !ok {
+		t.Fatalf("event[6].payload = %#v, want toolResultPayload", rec.events[6].payload)
+	}
+	if calcResult.Output.Result != "3" {
+		t.Fatalf("calculator tool result = %q, want %q", calcResult.Output.Result, "3")
 	}
 }
 
