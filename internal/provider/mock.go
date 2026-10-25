@@ -22,12 +22,19 @@ type ToolResult struct {
 	Err    error
 }
 
+// Usage reports the token counts a provider billed for a completion call.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
 // ModelResponse is a single response a provider can return for a completion
 // call. ToolCalls is non-empty when the model wants tools executed before it
 // continues.
 type ModelResponse struct {
 	Content   string
 	ToolCalls []tools.ToolCall
+	Usage     Usage
 }
 
 // ErrScriptExhausted indicates a MockProvider has no more scripted responses or errors.
