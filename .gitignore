@@ -1,0 +1,22 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Go build cache / vendor
+vendor/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
