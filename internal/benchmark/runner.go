@@ -23,10 +23,13 @@ type Config struct {
 	Repeats int
 }
 
-// TaskResult is the outcome of running one task once.
+// TaskResult is the outcome of running one task once. RunID is always set
+// (unlike Result.RunID, which is only set on a successful completion), so a
+// failed execution can still be identified and replayed.
 type TaskResult struct {
 	TaskID   string
 	Repeat   int
+	RunID    string
 	Result   runtime.RunResult
 	Err      error
 	Duration time.Duration
@@ -146,5 +149,5 @@ func (r *Runner) runOne(ctx context.Context, task Task, repeat int, newRuntime f
 	result, err := rt.Run(taskCtx, runID, task.Prompt)
 	duration := time.Since(start)
 
-	return TaskResult{TaskID: task.ID, Repeat: repeat, Result: result, Err: err, Duration: duration}
+	return TaskResult{TaskID: task.ID, Repeat: repeat, RunID: runID, Result: result, Err: err, Duration: duration}
 }

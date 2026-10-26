@@ -38,6 +38,10 @@ func Open(ctx context.Context, path string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storage: open %s: %w", path, err)
 	}
+	// SQLite allows only one writer at a time; routing every query through
+	// a single connection avoids SQLITE_BUSY errors from concurrent
+	// goroutines competing across pooled connections.
+	db.SetMaxOpenConns(1)
 
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = WAL;"); err != nil {
 		db.Close()

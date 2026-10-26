@@ -47,13 +47,23 @@ type policyExecutor interface {
 	Execute(ctx context.Context, exec policy.ToolExecutor, call tools.ToolCall) (tools.ToolOutput, error)
 }
 
+// retryCounter is implemented by policies that track how many retries they
+// have performed (such as *policy.DefaultPolicy), used to populate
+// RunResult.Retries with the count observed during one Run/Resume call.
+type retryCounter interface {
+	Retries() int64
+}
+
 // RunResult is the terminal output of a run: Status is "completed" for a
-// normal finish or "cancelled" if ctx was cancelled mid-run.
+// normal finish or "cancelled" if ctx was cancelled mid-run. Usage and
+// Retries cover only the steps executed during this Run/Resume call.
 type RunResult struct {
 	RunID   string
 	Content string
 	Steps   int
 	Status  string
+	Usage   provider.Usage
+	Retries int
 }
 
 type runStartedPayload struct {
@@ -210,6 +220,9 @@ func (r *Runtime) Resume(ctx context.Context, runID string) (RunResult, error) {
 // and Resume (starting from a saved checkpoint, with already-recorded tool
 // results available in recovered).
 func (r *Runtime) runLoop(ctx context.Context, runID string, startStep int, req provider.Request, recovered map[stepIndex]recoveredResult) (RunResult, error) {
+	startRetries := r.retriesSoFar()
+	var totalUsage provider.Usage
+
 	for step := startStep; ; step++ {
 		if step >= r.maxSteps {
 			err := fmt.Errorf("run %s: %w", runID, ErrMaxSteps)
@@ -237,6 +250,8 @@ func (r *Runtime) runLoop(ctx context.Context, runID string, startStep int, req 
 		if err := r.record(ctx, runID, recorder.EventModelResponse, resp); err != nil {
 			return RunResult{}, err
 		}
+		totalUsage.InputTokens += resp.Usage.InputTokens
+		totalUsage.OutputTokens += resp.Usage.OutputTokens
 
 		toolResults, cancelled, cancelErr := r.runToolCalls(ctx, runID, step, resp.ToolCalls, recovered)
 		if cancelled {
@@ -247,7 +262,14 @@ func (r *Runtime) runLoop(ctx context.Context, runID string, startStep int, req 
 		r.logger.DebugContext(ctx, "runtime step", "run_id", runID, "step", step, "tool_calls", len(resp.ToolCalls))
 
 		if len(resp.ToolCalls) == 0 {
-			result := RunResult{RunID: runID, Content: resp.Content, Steps: step + 1, Status: "completed"}
+			result := RunResult{
+				RunID:   runID,
+				Content: resp.Content,
+				Steps:   step + 1,
+				Status:  "completed",
+				Usage:   totalUsage,
+				Retries: int(r.retriesSoFar() - startRetries),
+			}
 			if err := r.record(ctx, runID, recorder.EventRunFinished, result); err != nil {
 				return RunResult{}, err
 			}
@@ -333,6 +355,15 @@ func (r *Runtime) executeTool(ctx context.Context, call tools.ToolCall) (tools.T
 		return tools.ToolOutput{}, err
 	}
 	return r.tools.Execute(ctx, call)
+}
+
+// retriesSoFar returns the configured policy's cumulative retry count, or 0
+// if there is no policy or it doesn't track retries.
+func (r *Runtime) retriesSoFar() int64 {
+	if rc, ok := r.policy.(retryCounter); ok {
+		return rc.Retries()
+	}
+	return 0
 }
 
 // finishCancelled finalizes a run that was stopped by ctx cancellation: it

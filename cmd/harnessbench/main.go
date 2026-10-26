@@ -2,20 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Vaibhavee89/agentflight/internal/benchmark"
+	"github.com/Vaibhavee89/agentflight/internal/metrics"
 	"github.com/Vaibhavee89/agentflight/internal/provider"
-	"github.com/Vaibhavee89/agentflight/internal/runtime"
-	"github.com/Vaibhavee89/agentflight/internal/tools"
-	"github.com/Vaibhavee89/agentflight/internal/tools/builtin"
+	"github.com/Vaibhavee89/agentflight/internal/recorder"
+	"github.com/Vaibhavee89/agentflight/internal/storage"
 )
 
 const version = "0.0.1-dev"
@@ -35,20 +33,27 @@ func main() {
 }
 
 // runSuite implements `harnessbench run -suite <path.jsonl> [-concurrency N]
-// [-repeats N] [-out path.json] [-timeout d]`: it loads the suite and its
-// sibling *.mock.json script, runs it offline through benchmark.Runner, and
-// writes the results as JSON.
+// [-repeats N] [-out results.json] [-report report.md] [-events-db path]
+// [-prices path.json] [-timeout d] [-seed n]`: it loads the suite and its
+// sibling *.mock.json script, runs it offline through benchmark.Runner with
+// events persisted to a real SQLite store (so any run can be replayed with
+// `agentflight replay`), grades each execution, and writes both the full
+// JSON results and a Markdown summary report.
 func runSuite(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	suite := fs.String("suite", "", "path to a benchmark suite JSONL file")
 	concurrency := fs.Int("concurrency", 1, "maximum number of tasks to run at once")
 	repeats := fs.Int("repeats", 1, "number of times to run each task")
-	out := fs.String("out", "results.json", "path to write JSON results to")
+	out := fs.String("out", "results.json", "path to write full JSON results to")
+	reportPath := fs.String("report", "report.md", "path to write the Markdown summary report to")
+	eventsDB := fs.String("events-db", "harnessbench-events.db", "path to the SQLite event store, replayable with agentflight replay")
+	pricesPath := fs.String("prices", "", "optional path to a JSON price table for cost estimation")
 	timeout := fs.Duration("timeout", 30*time.Second, "default per-task timeout when a task sets none")
+	seed := fs.Int64("seed", 1, "seed recorded in the report header for reproducibility")
 	fs.Parse(args)
 
 	if *suite == "" {
-		fmt.Fprintln(os.Stderr, "usage: harnessbench run -suite <path.jsonl> [-concurrency N] [-repeats N] [-out path.json] [-timeout d]")
+		fmt.Fprintln(os.Stderr, "usage: harnessbench run -suite <path.jsonl> [-concurrency N] [-repeats N] [-out path.json] [-report path.md] [-events-db path] [-prices path.json] [-timeout d] [-seed n]")
 		os.Exit(2)
 	}
 
@@ -65,120 +70,103 @@ func runSuite(args []string) {
 		os.Exit(1)
 	}
 
+	var prices metrics.PriceTable
+	if *pricesPath != "" {
+		prices, err = metrics.LoadPriceTable(*pricesPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load price table: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	byPrompt := make(map[string][]provider.ModelResponse, len(tasks))
+	taskByID := make(map[string]benchmark.Task, len(tasks))
 	maxSteps := 10
 	for _, task := range tasks {
 		script := scripts[task.ID]
 		byPrompt[task.Prompt] = script
+		taskByID[task.ID] = task
 		if len(script) > maxSteps {
 			maxSteps = len(script)
 		}
 	}
 
-	runner := benchmark.NewRunner(benchmark.Config{
+	// Start from a clean event store each run: a stale file from a
+	// previous run would collide on (run_id, seq) for any repeated run ID.
+	if err := os.Remove(*eventsDB); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "remove stale events db: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctx := context.Background()
+	store, err := storage.Open(ctx, *eventsDB)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open events db: %v\n", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
+	config := benchmark.Config{
 		Concurrency:    *concurrency,
 		PerTaskTimeout: *timeout,
 		Repeats:        *repeats,
-	})
+	}
+	runner := benchmark.NewRunner(config)
 
-	results, runErr := runner.Run(context.Background(), tasks, newRuntimeFactory(byPrompt, maxSteps))
+	results, runErr := runner.Run(ctx, tasks, newRuntimeFactory(byPrompt, store, maxSteps))
 	if runErr != nil {
 		fmt.Fprintf(os.Stderr, "run suite: %v\n", runErr)
 	}
 
-	if err := writeResults(*out, results); err != nil {
+	gradedResults := gradeResults(ctx, results, taskByID, store)
+
+	if err := writeResults(*out, gradedResults); err != nil {
 		fmt.Fprintf(os.Stderr, "write results: %v\n", err)
 		os.Exit(1)
 	}
 
-	var passed, failed int
-	for _, r := range results {
-		if r.Err == nil {
-			passed++
-		} else {
-			failed++
-		}
+	report := metrics.Compute(toExecutions(gradedResults), prices)
+	header := reportHeader{
+		GeneratedAt: time.Now().UTC(),
+		GitCommit:   gitCommit(),
+		Seed:        *seed,
+		Suite:       *suite,
+		EventsDB:    *eventsDB,
+		Config:      config,
+		PricesPath:  *pricesPath,
 	}
-	fmt.Printf("ran %d task executions: %d ok, %d failed; results written to %s\n", len(results), passed, failed, *out)
+	if err := writeReport(*reportPath, header, report, gradedResults); err != nil {
+		fmt.Fprintf(os.Stderr, "write report: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("ran %d task executions: %d ok, %d failed; results written to %s; report written to %s\n",
+		len(gradedResults), countPassed(gradedResults), len(gradedResults)-countPassed(gradedResults), *out, *reportPath)
 
 	if runErr != nil {
 		os.Exit(1)
 	}
 }
 
-// scriptedProvider implements runtime.ModelProvider by replaying the
-// scripted responses recorded under whichever prompt it is given, in
-// order. Each instance is built fresh for exactly one task run (see
-// newRuntimeFactory), so its cursor never needs to be reset.
-type scriptedProvider struct {
-	byPrompt map[string][]provider.ModelResponse
-
-	mu   sync.Mutex
-	next int
-}
-
-func (p *scriptedProvider) Complete(ctx context.Context, req provider.Request) (provider.ModelResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	script := p.byPrompt[req.Prompt]
-	if p.next >= len(script) {
-		return provider.ModelResponse{}, fmt.Errorf("harnessbench: no scripted response for prompt %q at step %d", req.Prompt, p.next)
-	}
-	resp := script[p.next]
-	p.next++
-	return resp, nil
-}
-
-// newRuntimeFactory returns a function building a fresh Runtime for one
-// task run: a scriptedProvider sharing the (read-only) byPrompt scripts,
-// and a registry with every built-in tool, since any task in the suite may
-// call either.
-func newRuntimeFactory(byPrompt map[string][]provider.ModelResponse, maxSteps int) func() *runtime.Runtime {
-	return func() *runtime.Runtime {
-		p := &scriptedProvider{byPrompt: byPrompt}
-
-		reg := tools.NewRegistry()
-		reg.Register(builtin.NewEcho())
-		reg.Register(builtin.NewCalculator())
-
-		return runtime.NewRuntime(p, reg, nil, runtime.WithMaxSteps(maxSteps))
-	}
-}
-
-type outputResult struct {
-	TaskID     string `json:"task_id"`
-	Repeat     int    `json:"repeat"`
-	Content    string `json:"content"`
-	Steps      int    `json:"steps"`
-	Status     string `json:"status"`
-	Error      string `json:"error,omitempty"`
-	DurationMS int64  `json:"duration_ms"`
-}
-
-func writeResults(path string, results []benchmark.TaskResult) error {
-	out := make([]outputResult, len(results))
-	for i, r := range results {
-		o := outputResult{
-			TaskID:     r.TaskID,
-			Repeat:     r.Repeat,
-			Content:    r.Result.Content,
-			Steps:      r.Result.Steps,
-			Status:     r.Result.Status,
-			DurationMS: r.Duration.Milliseconds(),
+func countPassed(results []gradedResult) int {
+	n := 0
+	for _, r := range results {
+		if r.grade.Pass {
+			n++
 		}
-		if r.Err != nil {
-			o.Error = r.Err.Error()
-		}
-		out[i] = o
 	}
+	return n
+}
 
-	data, err := json.MarshalIndent(out, "", "  ")
+// eventsOf is a small convenience used by grading to fetch a run's recorded
+// events, tolerating a nil store.
+func eventsOf(ctx context.Context, store *storage.SQLiteStore, runID string) []recorder.Event {
+	if store == nil {
+		return nil
+	}
+	events, err := store.Events(ctx, runID)
 	if err != nil {
-		return fmt.Errorf("encode results: %w", err)
+		return nil
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
+	return events
 }

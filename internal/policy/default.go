@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Vaibhavee89/agentflight/internal/tools"
@@ -40,6 +41,8 @@ type DefaultPolicy struct {
 
 	mu  sync.Mutex
 	rng *rand.Rand
+
+	retries int64
 }
 
 // DefaultOption configures a DefaultPolicy.
@@ -130,6 +133,8 @@ func (p *DefaultPolicy) Execute(ctx context.Context, exec ToolExecutor, call too
 			return tools.ToolOutput{}, lastErr
 		}
 
+		atomic.AddInt64(&p.retries, 1)
+
 		if err := p.sleep(ctx, p.backoff(attempt)); err != nil {
 			return tools.ToolOutput{}, fmt.Errorf("policy: %w", err)
 		}
@@ -152,6 +157,14 @@ func (p *DefaultPolicy) attempt(ctx context.Context, exec ToolExecutor, call too
 		return tools.ToolOutput{}, fmt.Errorf("policy: tool %q: %w", call.Name, ErrToolTimeout)
 	}
 	return output, err
+}
+
+// Retries reports the total number of retry attempts this policy has made
+// across every Execute call since it was constructed. Callers that want a
+// per-run count should snapshot it before and after a run and report the
+// difference.
+func (p *DefaultPolicy) Retries() int64 {
+	return atomic.LoadInt64(&p.retries)
 }
 
 // backoff returns a jittered delay for the given attempt (1-based), the

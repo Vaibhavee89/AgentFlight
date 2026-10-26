@@ -12,9 +12,9 @@ import (
 
 func TestExactMatch_Grade(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
-		want    string
+		name     string
+		content  string
+		want     string
 		wantPass bool
 	}{
 		{name: "exact match passes", content: "42", want: "42", wantPass: true},
