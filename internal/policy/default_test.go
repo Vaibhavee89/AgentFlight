@@ -170,6 +170,7 @@ func TestClassify(t *testing.T) {
 		{name: "context canceled is terminal", err: context.Canceled, want: Terminal},
 		{name: "context deadline exceeded is terminal", err: context.DeadlineExceeded, want: Terminal},
 		{name: "tool timeout is retryable", err: fmt.Errorf("wrap: %w", ErrToolTimeout), want: Retryable},
+		{name: "transient transport failure is retryable", err: fmt.Errorf("wrap: %w", ErrTransient), want: Retryable},
 		{name: "net timeout error is retryable", err: fakeNetError{timeout: true}, want: Retryable},
 		{name: "net non-timeout error is terminal", err: fakeNetError{timeout: false}, want: Terminal},
 		{name: "status 429 is retryable", err: &StatusError{StatusCode: 429}, want: Retryable},

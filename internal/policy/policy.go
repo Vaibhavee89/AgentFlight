@@ -37,6 +37,11 @@ var ErrPolicyDenied = errors.New("policy: tool call denied")
 // ErrToolTimeout indicates a tool call exceeded its allotted per-tool timeout.
 var ErrToolTimeout = errors.New("policy: tool timed out")
 
+// ErrTransient marks a failure of the channel to a tool (for example, a
+// dropped connection to an MCP server), as opposed to the tool itself failing.
+// Classify treats it as Retryable.
+var ErrTransient = errors.New("policy: transient transport failure")
+
 // StatusError represents a provider error carrying an HTTP-like status
 // code, used to classify 429 and 5xx responses as retryable.
 type StatusError struct {

@@ -112,6 +112,40 @@ Profile a run with `--pprof 127.0.0.1:6060` on either CLI. See
 [docs/performance.md](docs/performance.md) for the profiling workflow and the
 findings.
 
+## Using MCP tools
+
+Tools served by a [Model Context Protocol](https://modelcontextprotocol.io)
+server can be registered alongside the built-in tools. Each server tool
+becomes a `tools.Tool`, so the runtime, policy (allowlist, per-tool timeout,
+retries), and recording treat it like any other tool.
+
+```go
+session, err := mcp.ConnectStdio(ctx, exec.Command("my-mcp-server", "--flag"))   // stdio
+// or: session, err := mcp.ConnectHTTP(ctx, "https://host/mcp", nil)            // streamable HTTP
+if err != nil { /* ... */ }
+defer session.Close()
+
+reg := tools.NewRegistry()
+names, err := mcp.Register(ctx, reg, session)   // one Tool per server tool, paginated
+```
+
+Run the example, which starts a demo MCP server as a subprocess and runs an
+agent against its `add` tool. It needs no network and no API key:
+
+```bash
+go run ./examples/mcp
+# connected over stdio; server offers tools: [add]
+# agent answer (2 steps): 2 + 3 = 5
+```
+
+Error mapping: a deadline that expires during a call is `policy.ErrToolTimeout`
+(retried); a broken connection is `policy.ErrTransient` (retried); a tool that
+reports an error in its result is `mcp.ErrToolReported`, and JSON-RPC protocol
+errors are terminal.
+
+The MCP SDK is confined to `internal/tools/mcp`. `make vet` fails if any other
+package imports it, as required by [AGENTS.md](AGENTS.md).
+
 ## Go features and where to find them
 
 | Feature | Where |
@@ -134,6 +168,7 @@ findings.
 | Benchmarks, including with and without SQLite | [recorder/bench_test.go](internal/recorder/bench_test.go), [runtime/bench_test.go](internal/runtime/bench_test.go), [benchmark/runner_bench_test.go](internal/benchmark/runner_bench_test.go) |
 | `net/http/pprof` on an explicit mux | [pprofserve/pprofserve.go](internal/pprofserve/pprofserve.go) |
 | Real-signal test of graceful shutdown | [api/shutdown_test.go](api/shutdown_test.go) |
+| MCP client over stdio and HTTP, mapped to typed errors | [tools/mcp/tool.go](internal/tools/mcp/tool.go), [tools/mcp/connect.go](internal/tools/mcp/connect.go) |
 | Race-clean concurrency tests, repeated for flakes | [benchmark/runner_test.go](internal/benchmark/runner_test.go), [runtime/recovery_test.go](internal/runtime/recovery_test.go) |
 
 ## Design decisions
@@ -179,12 +214,11 @@ deadline for each run to record its final state. It exits non-zero if any
 run is still active at the deadline. The shutdown test sends a real `SIGTERM`
 to the test process and checks that the run's final event is `cancelled`.
 
-**Dependencies are kept to the standard library plus two modules.** The
-allowed dependencies are `golang.org/x/sync/errgroup` and `modernc.org/sqlite`,
-which is pure Go and needs no cgo. Everything else, including the HTTP server,
-JSON, and profiling, is standard library. The rule is written down in
-[AGENTS.md](AGENTS.md), and it is the reason the optional MCP tool integration
-is not included: the official Go MCP SDK would be a third dependency.
+**Dependencies are kept to a short allow-list.** Beyond the standard library,
+the allowed modules are `golang.org/x/sync/errgroup`, `modernc.org/sqlite` (pure
+Go, no cgo), and the official MCP Go SDK, pinned in `go.mod`. The SDK may be
+imported only from `internal/tools/mcp`, and `make vet` enforces that. The rule
+is written down in [AGENTS.md](AGENTS.md).
 
 **Benchmarks measure what they claim.** The fault injector is seeded, so both
 runtimes see the same faults and the comparison is reproducible. Recording
@@ -202,4 +236,6 @@ fixed alongside the ones that were.
 - The per-event SQLite commit is the main cost of recording. Batched group
   commit is the recommended next step, described in
   [docs/performance.md](docs/performance.md).
-- The MCP tool integration is not implemented; see the dependency note above.
+- MCP tools work over stdio and streamable HTTP. Both are tested against
+  in-process fake servers; neither has been checked against a third-party
+  MCP server.

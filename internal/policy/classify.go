@@ -32,6 +32,9 @@ func Classify(err error) Disposition {
 	if errors.Is(err, ErrToolTimeout) {
 		return Retryable
 	}
+	if errors.Is(err, ErrTransient) {
+		return Retryable
+	}
 
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
