@@ -13,6 +13,14 @@ type Store interface {
 	Append(ctx context.Context, event Event) error
 }
 
+// SeqStore is optionally implemented by a Store that can report the highest
+// seq already persisted for a run. A Recorder consults it the first time it
+// sees a run, so a recorder created after a restart continues the run's
+// sequence instead of colliding with events already stored.
+type SeqStore interface {
+	LastSeq(ctx context.Context, runID string) (int64, error)
+}
+
 // Recorder assigns each run a monotonically increasing sequence number,
 // stamps every event with CurrentVersion and a timestamp, and writes
 // through to a Store. It is safe for concurrent use, including concurrent
@@ -55,9 +63,14 @@ func (r *Recorder) Record(ctx context.Context, runID string, eventType EventType
 		return fmt.Errorf("recorder: encode payload for %s: %w", eventType, err)
 	}
 
+	seq, err := r.nextSeq(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("recorder: seq for run %s: %w", runID, err)
+	}
+
 	event := Event{
 		RunID:   runID,
-		Seq:     r.nextSeq(runID),
+		Seq:     seq,
 		Version: CurrentVersion,
 		Type:    eventType,
 		Time:    r.clock(),
@@ -72,11 +85,22 @@ func (r *Recorder) Record(ctx context.Context, runID string, eventType EventType
 
 // nextSeq returns the next sequence number for runID, incrementing its
 // counter under the Recorder's mutex so concurrent callers never see gaps
-// or duplicates.
-func (r *Recorder) nextSeq(runID string) int64 {
+// or duplicates. The first call for a run seeds the counter from the store
+// when the store implements SeqStore.
+func (r *Recorder) nextSeq(ctx context.Context, runID string) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	seq := r.next[runID] + 1
+	last, seen := r.next[runID]
+	if !seen {
+		if src, ok := r.store.(SeqStore); ok {
+			persisted, err := src.LastSeq(ctx, runID)
+			if err != nil {
+				return 0, err
+			}
+			last = persisted
+		}
+	}
+	seq := last + 1
 	r.next[runID] = seq
-	return seq
+	return seq, nil
 }

@@ -22,6 +22,8 @@ func main() {
 	switch os.Args[1] {
 	case "replay":
 		runReplay(os.Args[2:])
+	case "serve":
+		runServe(os.Args[2:])
 	default:
 		fmt.Println("agentflight " + version)
 	}

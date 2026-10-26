@@ -436,12 +436,15 @@ func (r *Runtime) recoveredToolResults(ctx context.Context, runID string) (map[s
 }
 
 // record is a no-op when no Recorder is configured; otherwise it records
-// eventType/payload for runID and wraps any failure as a fatal run error.
+// eventType/payload for runID and wraps any failure as a fatal run error. The
+// write ignores ctx's cancellation: cancellation is observed at step
+// boundaries, and an event that was cut short would leave the log without
+// the final state the caller is waiting for.
 func (r *Runtime) record(ctx context.Context, runID string, eventType recorder.EventType, payload any) error {
 	if r.recorder == nil {
 		return nil
 	}
-	if err := r.recorder.Record(ctx, runID, eventType, payload); err != nil {
+	if err := r.recorder.Record(context.WithoutCancel(ctx), runID, eventType, payload); err != nil {
 		return fmt.Errorf("run %s: record %s: %w", runID, eventType, err)
 	}
 	return nil
@@ -469,7 +472,7 @@ func (r *Runtime) recordError(ctx context.Context, runID string, step int, cause
 		return
 	}
 	payload := runErrorPayload{Step: step, Message: cause.Error()}
-	if err := r.recorder.Record(ctx, runID, recorder.EventError, payload); err != nil {
+	if err := r.recorder.Record(context.WithoutCancel(ctx), runID, recorder.EventError, payload); err != nil {
 		r.logger.ErrorContext(ctx, "failed to record error event", "run_id", runID, "step", step, "error", err)
 	}
 }

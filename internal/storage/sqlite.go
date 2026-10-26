@@ -123,6 +123,18 @@ func (s *SQLiteStore) Events(ctx context.Context, runID string) ([]recorder.Even
 	return events, nil
 }
 
+// LastSeq returns the highest seq stored for runID, or 0 if it has no events.
+func (s *SQLiteStore) LastSeq(ctx context.Context, runID string) (int64, error) {
+	var seq int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(seq), 0) FROM events WHERE run_id = ?`, runID,
+	).Scan(&seq)
+	if err != nil {
+		return 0, fmt.Errorf("storage: last seq for run %s: %w", runID, err)
+	}
+	return seq, nil
+}
+
 // SaveCheckpoint inserts a new checkpoint row for cp.RunID at seq cp.Step.
 func (s *SQLiteStore) SaveCheckpoint(ctx context.Context, cp recovery.Checkpoint) error {
 	data, err := json.Marshal(cp)
