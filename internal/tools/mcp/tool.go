@@ -25,21 +25,21 @@ var ErrToolReported = errors.New("mcp: tool reported an error")
 type Tool struct {
 	session *mcpsdk.ClientSession
 	def     *mcpsdk.Tool
+	schema  json.RawMessage
 }
 
-// Spec returns the tool's name and description.
-func (t *Tool) Spec() tools.ToolSpec {
-	return tools.ToolSpec{Name: t.def.Name, Description: t.def.Description}
-}
-
-// InputSchema returns the JSON Schema the server declared for the tool's
-// arguments.
-func (t *Tool) InputSchema() (json.RawMessage, error) {
-	data, err := json.Marshal(t.def.InputSchema)
+// newTool wraps def, encoding its input schema once so Spec stays infallible.
+func newTool(session *mcpsdk.ClientSession, def *mcpsdk.Tool) (*Tool, error) {
+	schema, err := json.Marshal(def.InputSchema)
 	if err != nil {
-		return nil, fmt.Errorf("mcp: encode input schema for %q: %w", t.def.Name, err)
+		return nil, fmt.Errorf("mcp: encode input schema for %q: %w", def.Name, err)
 	}
-	return data, nil
+	return &Tool{session: session, def: def, schema: schema}, nil
+}
+
+// Spec returns the tool's name, description, and input schema.
+func (t *Tool) Spec() tools.ToolSpec {
+	return tools.ToolSpec{Name: t.def.Name, Description: t.def.Description, InputSchema: t.schema}
 }
 
 // Execute calls the tool on the server with call.Input as its arguments. ctx

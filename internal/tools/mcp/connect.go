@@ -49,7 +49,11 @@ func Register(ctx context.Context, reg *tools.Registry, session *mcpsdk.ClientSe
 			return names, fmt.Errorf("mcp: list tools: %w", err)
 		}
 		for _, def := range res.Tools {
-			if err := reg.Register(&Tool{session: session, def: def}); err != nil {
+			tool, err := newTool(session, def)
+			if err != nil {
+				return names, err
+			}
+			if err := reg.Register(tool); err != nil {
 				return names, fmt.Errorf("mcp: register tool %q: %w", def.Name, err)
 			}
 			names = append(names, def.Name)

@@ -38,10 +38,7 @@ func TestRegister_ListsToolsWithSpecAndSchema(t *testing.T) {
 	if spec := got.Spec(); spec.Name != "echo" || spec.Description != "returns the text argument" {
 		t.Fatalf("Spec() = %+v", spec)
 	}
-	schema, err := got.(*Tool).InputSchema()
-	if err != nil {
-		t.Fatalf("InputSchema: %v", err)
-	}
+	schema := got.Spec().InputSchema
 	var parsed struct {
 		Type       string         `json:"type"`
 		Properties map[string]any `json:"properties"`

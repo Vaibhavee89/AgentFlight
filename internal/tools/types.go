@@ -7,10 +7,13 @@ import (
 	"fmt"
 )
 
-// ToolSpec describes a tool's identity and purpose to a caller.
+// ToolSpec describes a tool's identity, purpose, and argument shape to a caller.
+// InputSchema is a JSON Schema for the tool's input; nil means the tool did not
+// declare one.
 type ToolSpec struct {
 	Name        string
 	Description string
+	InputSchema json.RawMessage
 }
 
 // ToolCall is a request to execute a named tool with a JSON-encoded input.
