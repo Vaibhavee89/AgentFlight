@@ -243,7 +243,7 @@ func TestPercentile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := percentile(tt.in, tt.p); got != tt.want {
+			if got := Percentile(tt.in, tt.p); got != tt.want {
 				t.Fatalf("percentile() = %v, want %v", got, tt.want)
 			}
 		})

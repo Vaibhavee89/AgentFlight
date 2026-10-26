@@ -5,13 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/Vaibhavee89/agentflight/internal/benchmark"
 	"github.com/Vaibhavee89/agentflight/internal/metrics"
-	"github.com/Vaibhavee89/agentflight/internal/provider"
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
 	"github.com/Vaibhavee89/agentflight/internal/storage"
 )
@@ -27,6 +24,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		runSuite(os.Args[2:])
+	case "compare":
+		runCompare(os.Args[2:])
 	default:
 		fmt.Println("harnessbench " + version)
 	}
@@ -57,16 +56,9 @@ func runSuite(args []string) {
 		os.Exit(2)
 	}
 
-	tasks, err := benchmark.LoadTasks(*suite)
+	s, err := loadSuite(*suite)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "load suite: %v\n", err)
-		os.Exit(1)
-	}
-
-	mockPath := strings.TrimSuffix(*suite, filepath.Ext(*suite)) + ".mock.json"
-	scripts, err := benchmark.LoadMockScripts(mockPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "load mock scripts %s: %v\n", mockPath, err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
@@ -76,18 +68,6 @@ func runSuite(args []string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "load price table: %v\n", err)
 			os.Exit(1)
-		}
-	}
-
-	byPrompt := make(map[string][]provider.ModelResponse, len(tasks))
-	taskByID := make(map[string]benchmark.Task, len(tasks))
-	maxSteps := 10
-	for _, task := range tasks {
-		script := scripts[task.ID]
-		byPrompt[task.Prompt] = script
-		taskByID[task.ID] = task
-		if len(script) > maxSteps {
-			maxSteps = len(script)
 		}
 	}
 
@@ -113,12 +93,12 @@ func runSuite(args []string) {
 	}
 	runner := benchmark.NewRunner(config)
 
-	results, runErr := runner.Run(ctx, tasks, newRuntimeFactory(byPrompt, store, maxSteps))
+	results, runErr := runner.Run(ctx, s.tasks, newRuntimeFactory(s.byPrompt, store, s.maxSteps))
 	if runErr != nil {
 		fmt.Fprintf(os.Stderr, "run suite: %v\n", runErr)
 	}
 
-	gradedResults := gradeResults(ctx, results, taskByID, store)
+	gradedResults := gradeResults(ctx, results, s.taskByID, store)
 
 	if err := writeResults(*out, gradedResults); err != nil {
 		fmt.Fprintf(os.Stderr, "write results: %v\n", err)

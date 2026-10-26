@@ -20,3 +20,9 @@ vendor/
 
 # OS
 .DS_Store
+
+# harnessbench runtime outputs
+/harnessbench-*.db
+/harnessbench-*.db-*
+results.json
+report.md

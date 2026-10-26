@@ -125,8 +125,8 @@ func computeTaskMetrics(taskID string, execs []Execution, prices PriceTable) Tas
 		m.PassRate = float64(passCount) / float64(len(sorted))
 		m.AvgSteps = float64(totalSteps) / float64(len(sorted))
 	}
-	m.P50Latency = percentile(durations, 0.50)
-	m.P95Latency = percentile(durations, 0.95)
+	m.P50Latency = Percentile(durations, 0.50)
+	m.P95Latency = Percentile(durations, 0.95)
 
 	return m
 }
@@ -169,8 +169,8 @@ func computeAggregate(tasks []TaskMetrics, execs []Execution, prices PriceTable)
 		agg.OverallPassRate = float64(totalPass) / float64(len(execs))
 		agg.AvgSteps = float64(totalSteps) / float64(len(execs))
 	}
-	agg.P50Latency = percentile(durations, 0.50)
-	agg.P95Latency = percentile(durations, 0.95)
+	agg.P50Latency = Percentile(durations, 0.50)
+	agg.P95Latency = Percentile(durations, 0.95)
 
 	return agg
 }
@@ -188,9 +188,9 @@ func classifyExecution(e Execution) string {
 	return ""
 }
 
-// percentile returns the nearest-rank p-th percentile (0 < p <= 1) of
+// Percentile returns the nearest-rank p-th percentile (0 < p <= 1) of
 // durations, which is not modified.
-func percentile(durations []time.Duration, p float64) time.Duration {
+func Percentile(durations []time.Duration, p float64) time.Duration {
 	if len(durations) == 0 {
 		return 0
 	}
