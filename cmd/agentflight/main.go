@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Vaibhavee89/agentflight/internal/replay"
 	"github.com/Vaibhavee89/agentflight/internal/storage"
@@ -31,8 +32,11 @@ func main() {
 // otherwise.
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
+	pprofAddr := fs.String("pprof", "", "serve net/http/pprof on this address (e.g. 127.0.0.1:6060); empty disables")
+	pprofHold := fs.Duration("pprof-hold", 0, "with -pprof, keep serving profiles this long after the replay finishes")
 	dbPath := fs.String("db", "agentflight.db", "path to the SQLite event store")
 	fs.Parse(args)
+	startPprof(*pprofAddr)
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: agentflight replay [-db path] <run-id>")
@@ -53,4 +57,7 @@ func runReplay(args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("OK")
+	if *pprofHold > 0 {
+		time.Sleep(*pprofHold)
+	}
 }

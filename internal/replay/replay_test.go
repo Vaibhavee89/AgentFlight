@@ -71,7 +71,7 @@ func tamperPayload(t *testing.T, store *memoryStore, runID string, eventType rec
 	t.Fatalf("tamperPayload: no %s event #%d found for run %s", eventType, occurrence, runID)
 }
 
-func newEchoRegistry(t *testing.T) *tools.Registry {
+func newEchoRegistry(t testing.TB) *tools.Registry {
 	t.Helper()
 	reg := tools.NewRegistry()
 	if err := reg.Register(builtin.NewEcho()); err != nil {

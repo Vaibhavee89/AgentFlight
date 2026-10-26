@@ -6,6 +6,7 @@ import (
 
 	"github.com/Vaibhavee89/agentflight/internal/benchmark"
 	"github.com/Vaibhavee89/agentflight/internal/metrics"
+	"github.com/Vaibhavee89/agentflight/internal/recorder"
 	"github.com/Vaibhavee89/agentflight/internal/storage"
 )
 
@@ -42,7 +43,12 @@ func gradeOne(ctx context.Context, result benchmark.TaskResult, taskByID map[str
 		return benchmark.Grade{Pass: false, Reason: err.Error()}
 	}
 
-	events := eventsOf(ctx, store, result.RunID)
+	// Only tool_called inspects the event log; loading it for every other
+	// grader was the largest allocation source in the 20k-execution profile.
+	var events []recorder.Event
+	if task.Grader.Type == "tool_called" {
+		events = eventsOf(ctx, store, result.RunID)
+	}
 	grade, err := grader.Grade(ctx, task, benchmark.RunResult{RunResult: result.Result, Events: events})
 	if err != nil {
 		return benchmark.Grade{Pass: false, Reason: err.Error()}

@@ -47,6 +47,12 @@ func Open(ctx context.Context, path string) (*SQLiteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("storage: enable WAL mode: %w", err)
 	}
+	// Under WAL, NORMAL stays crash-consistent but skips the fsync on every
+	// commit; the last few commits can be lost on power failure.
+	if _, err := db.ExecContext(ctx, "PRAGMA synchronous = NORMAL;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("storage: set synchronous: %w", err)
+	}
 
 	schema, err := os.ReadFile(migrationPath())
 	if err != nil {

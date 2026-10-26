@@ -43,13 +43,15 @@ func (p *scriptedProvider) Complete(ctx context.Context, req provider.Request) (
 // either), and a Recorder writing through to the shared SQLite store so the
 // run can later be replayed with `agentflight replay`.
 func newRuntimeFactory(byPrompt map[string][]provider.ModelResponse, store *storage.SQLiteStore, maxSteps int) func() *runtime.Runtime {
+	// The built-in tools are stateless and Registry is safe for concurrent
+	// use, so one shared registry serves every run instead of rebuilding it
+	// per execution.
+	reg := tools.NewRegistry()
+	reg.Register(builtin.NewEcho())
+	reg.Register(builtin.NewCalculator())
+
 	return func() *runtime.Runtime {
 		p := &scriptedProvider{byPrompt: byPrompt}
-
-		reg := tools.NewRegistry()
-		reg.Register(builtin.NewEcho())
-		reg.Register(builtin.NewCalculator())
-
 		rec := recorder.NewRecorder(store)
 
 		return runtime.NewRuntime(p, reg, rec, runtime.WithMaxSteps(maxSteps))

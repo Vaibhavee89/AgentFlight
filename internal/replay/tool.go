@@ -39,7 +39,7 @@ func NewReplayTool(events []recorder.Event) (*ReplayTool, error) {
 			Error  string           `json:"error,omitempty"`
 		}
 		if err := json.Unmarshal(e.Payload, &payload); err != nil {
-			return nil, fmt.Errorf("replay: decode tool_result seq %d: %w", e.Seq, err)
+			return nil, fmt.Errorf("replay: decode tool_result seq %d: %w: %w", e.Seq, ErrCorruptRecording, err)
 		}
 		results = append(results, toolResultRecord{name: payload.Name, output: payload.Output, errMsg: payload.Error})
 	}

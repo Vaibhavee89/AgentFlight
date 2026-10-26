@@ -18,6 +18,11 @@ import (
 // call the live run attempted.
 var ErrReplayExhausted = errors.New("replay: no more recorded events")
 
+// ErrCorruptRecording indicates the recorded event log cannot be replayed
+// because a payload is not valid JSON or a model_response has no preceding
+// model_request.
+var ErrCorruptRecording = errors.New("replay: corrupt recording")
+
 type requestResponsePair struct {
 	request  json.RawMessage
 	response provider.ModelResponse
@@ -45,9 +50,15 @@ func NewReplayProvider(events []recorder.Event) (*ReplayProvider, error) {
 		case recorder.EventModelRequest:
 			pendingRequest = e.Payload
 		case recorder.EventModelResponse:
+			if len(pendingRequest) == 0 {
+				return nil, fmt.Errorf("replay: model_response seq %d has no preceding model_request: %w", e.Seq, ErrCorruptRecording)
+			}
+			if !json.Valid(pendingRequest) {
+				return nil, fmt.Errorf("replay: model_request before seq %d is not valid JSON: %w", e.Seq, ErrCorruptRecording)
+			}
 			var resp provider.ModelResponse
 			if err := json.Unmarshal(e.Payload, &resp); err != nil {
-				return nil, fmt.Errorf("replay: decode model_response seq %d: %w", e.Seq, err)
+				return nil, fmt.Errorf("replay: decode model_response seq %d: %w: %w", e.Seq, ErrCorruptRecording, err)
 			}
 			pairs = append(pairs, requestResponsePair{request: pendingRequest, response: resp})
 			pendingRequest = nil

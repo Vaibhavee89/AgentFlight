@@ -38,6 +38,7 @@ const perRunTimeout = 400 * time.Millisecond
 // Markdown report.
 func runCompare(args []string) {
 	fs := flag.NewFlagSet("compare", flag.ExitOnError)
+	pprofAddr := fs.String("pprof", "", "serve net/http/pprof on this address (e.g. 127.0.0.1:6060); empty disables")
 	suite := fs.String("suite", "", "path to a benchmark suite JSONL file")
 	faultsFlag := fs.String("faults", "0", "comma-separated list of fault rates in [0,1]")
 	repeats := fs.Int("repeats", 1, "number of repeats per task at each fault rate")
@@ -45,6 +46,7 @@ func runCompare(args []string) {
 	eventsDB := fs.String("events-db", "harnessbench-compare-events.db", "path to the SQLite event store used by the AgentFlight runtime")
 	seed := fs.Int64("seed", 1, "base seed for fault injection, for reproducibility")
 	fs.Parse(args)
+	startPprof(*pprofAddr)
 
 	if *suite == "" {
 		fmt.Fprintln(os.Stderr, "usage: harnessbench compare -suite <path.jsonl> [-faults r1,r2,...] [-repeats N] [-report path.md] [-events-db path] [-seed n]")

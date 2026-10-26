@@ -49,12 +49,18 @@ func writeResults(path string, results []gradedResult) error {
 		out[i] = o
 	}
 
-	data, err := json.MarshalIndent(out, "", "  ")
+	f, err := os.Create(path)
 	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
+		f.Close()
 		return fmt.Errorf("encode results: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
 	}
 	return nil
 }

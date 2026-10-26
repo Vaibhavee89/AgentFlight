@@ -40,6 +40,8 @@ func main() {
 // JSON results and a Markdown summary report.
 func runSuite(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	pprofAddr := fs.String("pprof", "", "serve net/http/pprof on this address (e.g. 127.0.0.1:6060); empty disables")
+	pprofHold := fs.Duration("pprof-hold", 0, "with -pprof, keep serving profiles this long after the run finishes")
 	suite := fs.String("suite", "", "path to a benchmark suite JSONL file")
 	concurrency := fs.Int("concurrency", 1, "maximum number of tasks to run at once")
 	repeats := fs.Int("repeats", 1, "number of times to run each task")
@@ -50,6 +52,7 @@ func runSuite(args []string) {
 	timeout := fs.Duration("timeout", 30*time.Second, "default per-task timeout when a task sets none")
 	seed := fs.Int64("seed", 1, "seed recorded in the report header for reproducibility")
 	fs.Parse(args)
+	startPprof(*pprofAddr)
 
 	if *suite == "" {
 		fmt.Fprintln(os.Stderr, "usage: harnessbench run -suite <path.jsonl> [-concurrency N] [-repeats N] [-out path.json] [-report path.md] [-events-db path] [-prices path.json] [-timeout d] [-seed n]")
@@ -122,6 +125,10 @@ func runSuite(args []string) {
 
 	fmt.Printf("ran %d task executions: %d ok, %d failed; results written to %s; report written to %s\n",
 		len(gradedResults), countPassed(gradedResults), len(gradedResults)-countPassed(gradedResults), *out, *reportPath)
+
+	if *pprofHold > 0 {
+		time.Sleep(*pprofHold)
+	}
 
 	if runErr != nil {
 		os.Exit(1)
