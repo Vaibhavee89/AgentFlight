@@ -29,6 +29,8 @@ with zero duplicate tool executions. Baseline, which restarts from scratch,
 recovers 20 of 30, and its 30 restarts re-execute tool calls that had already
 completed before the kill (30 duplicate executions).
 
+At 0% faults the baseline passes 9 of 12 tasks, for two different reasons: task-12 fails because baseline aborts on the first tool error (the calculator's divide-by-zero) instead of returning it to the model, a real capability gap, and tasks 09 and 10 fail because they are graded `tool_called`, which reads the event log that baseline does not keep, so they are counted as never called even though baseline made the call, a grading artifact.
+
 The duplicate-execution column for AgentFlight is policy retries after injected
 transient faults. Its rise with the fault rate is the cost of retrying, and the
 trade is a higher success rate. Baseline never retries, so it cannot duplicate

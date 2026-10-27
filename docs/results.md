@@ -23,6 +23,8 @@ Both runtimes see the exact same scripted responses and the exact same seeded fa
 | agentflight | 0.20 | 58.3% | 1.30 | 44.592167ms | 24 | 120/120 |
 | baseline | 0.20 | 40.8% | 1.07 | 400.736625ms | 0 | 0/120 |
 
+At 0% faults the baseline passes 9 of 12 tasks, for two different reasons: task-12 fails because baseline aborts on the first tool error (the calculator's divide-by-zero) instead of returning it to the model, a real capability gap, and tasks 09 and 10 fail because they are graded `tool_called`, which reads the event log that baseline does not keep, so they are counted as never called even though baseline made the call, a grading artifact.
+
 Notes: "Duplicate tool execs" is total tool-executor calls minus the number of tool calls the scripted responses make exactly once; for AgentFlight this counts policy retries after transient faults, for baseline it is always 0 since baseline never retries. "Runs with recorded final state" is always 0 for baseline, which keeps no event log at all.
 
 ## Mid-run kill scenario
