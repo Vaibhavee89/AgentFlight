@@ -31,6 +31,8 @@ completed before the kill (30 duplicate executions).
 
 At 0% faults the baseline passes 9 of 12 tasks, for two different reasons: task-12 fails because baseline aborts on the first tool error (the calculator's divide-by-zero) instead of returning it to the model, a real capability gap, and tasks 09 and 10 fail because they are graded `tool_called`, which reads the event log that baseline does not keep, so they are counted as never called even though baseline made the call, a grading artifact.
 
+The p95 latency column measures how long a run lasted before it ended, and under faults it is set by the harness rather than by either runtime's own behavior. Every run gets the same 400 ms deadline (`perRunTimeout` in `cmd/harnessbench/compare.go`). Baseline has no per-tool timeout, so a hung tool call holds the run until that deadline ends it, which is why its p95 is about 400 ms and is a ceiling, not a measured duration. AgentFlight sets a 30 ms per-tool timeout, so a hung call fails after 30 ms and is retried, and its p95 is about 30–45 ms, roughly one timed-out attempt plus a successful retry. The latency gap is therefore the per-tool timeout, not faster execution; the numbers do not show how long a successful baseline run would take.
+
 The duplicate-execution column for AgentFlight is policy retries after injected
 transient faults. Its rise with the fault rate is the cost of retrying, and the
 trade is a higher success rate. Baseline never retries, so it cannot duplicate
