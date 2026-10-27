@@ -198,3 +198,39 @@ func TestReplayTool_Execute_Exhausted(t *testing.T) {
 		t.Fatalf("Execute() error = %v, want wrapping %v", err, ErrReplayExhausted)
 	}
 }
+
+func TestReplay_ToolNameChangeIsReportedWithSeq(t *testing.T) {
+	store := &memoryStore{}
+	rec := recorder.NewRecorder(store)
+
+	responses := []provider.ModelResponse{
+		{ToolCalls: []tools.ToolCall{{Name: "echo", Input: json.RawMessage(`{"text":"hi"}`)}}},
+		{Content: "done"},
+	}
+	rt := runtime.NewRuntime(provider.NewMockProvider(responses, nil), newEchoRegistry(t), rec, runtime.WithMaxSteps(5))
+	if _, err := rt.Run(context.Background(), "run-tool-name", "prompt"); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	var resultSeq int64
+	for _, e := range store.events {
+		if e.Type == recorder.EventToolResult {
+			resultSeq = e.Seq
+		}
+	}
+	tamperPayload(t, store, "run-tool-name", recorder.EventToolResult, 0, func(v map[string]any) {
+		v["name"] = "calculator"
+	})
+
+	_, err := Replay(context.Background(), store, "run-tool-name")
+	var mm *MismatchError
+	if !errors.As(err, &mm) {
+		t.Fatalf("Replay() error = %v, want *MismatchError", err)
+	}
+	if mm.Seq != resultSeq {
+		t.Fatalf("MismatchError.Seq = %d, want the tool_result seq %d", mm.Seq, resultSeq)
+	}
+	if !errors.Is(err, runtime.ErrReplayMismatch) {
+		t.Fatalf("Replay() error = %v, want wrapping %v", err, runtime.ErrReplayMismatch)
+	}
+}

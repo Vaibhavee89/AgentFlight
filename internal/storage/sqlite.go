@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"sort"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -24,15 +25,35 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
-// migrationPath resolves migrations/001_init.sql relative to this source
+// migrationsDir resolves the migrations directory relative to this source
 // file, so it is found regardless of the caller's working directory.
-func migrationPath() string {
+func migrationsDir() string {
 	_, file, _, _ := goruntime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "migrations", "001_init.sql")
+	return filepath.Join(filepath.Dir(file), "..", "..", "migrations")
+}
+
+// applyMigrations runs every migrations/*.sql file in name order. Each file
+// must be idempotent (CREATE ... IF NOT EXISTS), so reopening a database is safe.
+func applyMigrations(ctx context.Context, db *sql.DB) error {
+	files, err := filepath.Glob(filepath.Join(migrationsDir(), "*.sql"))
+	if err != nil {
+		return fmt.Errorf("storage: list migrations: %w", err)
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		schema, err := os.ReadFile(f)
+		if err != nil {
+			return fmt.Errorf("storage: read migration %s: %w", filepath.Base(f), err)
+		}
+		if _, err := db.ExecContext(ctx, string(schema)); err != nil {
+			return fmt.Errorf("storage: apply migration %s: %w", filepath.Base(f), err)
+		}
+	}
+	return nil
 }
 
 // Open opens (creating if necessary) a SQLite database at path, enables WAL
-// mode, and applies the schema in migrations/001_init.sql.
+// mode, and applies every migration in migrations/.
 func Open(ctx context.Context, path string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -54,14 +75,9 @@ func Open(ctx context.Context, path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("storage: set synchronous: %w", err)
 	}
 
-	schema, err := os.ReadFile(migrationPath())
-	if err != nil {
+	if err := applyMigrations(ctx, db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("storage: read migration: %w", err)
-	}
-	if _, err := db.ExecContext(ctx, string(schema)); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("storage: apply migration: %w", err)
+		return nil, err
 	}
 
 	return &SQLiteStore{db: db}, nil

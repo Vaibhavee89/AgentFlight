@@ -43,6 +43,7 @@ func runCompare(args []string) {
 	faultsFlag := fs.String("faults", "0", "comma-separated list of fault rates in [0,1]")
 	repeats := fs.Int("repeats", 1, "number of repeats per task at each fault rate")
 	reportPath := fs.String("report", "docs/results.md", "path to write the comparison report to")
+	jsonPath := fs.String("json", "", "optional path to write the versioned machine-readable comparison (see benchmark.CompareDocument)")
 	eventsDB := fs.String("events-db", "harnessbench-compare-events.db", "path to the SQLite event store used by the AgentFlight runtime")
 	seed := fs.Int64("seed", 1, "base seed for fault injection, for reproducibility")
 	fs.Parse(args)
@@ -85,7 +86,7 @@ func runCompare(args []string) {
 
 	killSummaries := runKillScenario(ctx, s, *repeats, *seed, store)
 
-	if err := writeCompareReport(*reportPath, compareHeader{
+	header := compareHeader{
 		GeneratedAt: time.Now().UTC(),
 		GitCommit:   gitCommit(),
 		Seed:        *seed,
@@ -93,9 +94,16 @@ func runCompare(args []string) {
 		Repeats:     *repeats,
 		FaultRates:  faultRates,
 		EventsDB:    *eventsDB,
-	}, rows, killSummaries); err != nil {
+	}
+	if err := writeCompareReport(*reportPath, header, rows, killSummaries); err != nil {
 		fmt.Fprintf(os.Stderr, "write report: %v\n", err)
 		os.Exit(1)
+	}
+	if *jsonPath != "" {
+		if err := benchmark.WriteCompareDocument(*jsonPath, toCompareDocument(header, rows, killSummaries)); err != nil {
+			fmt.Fprintf(os.Stderr, "write json: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Printf("compare complete across %d fault rate(s); report written to %s\n", len(faultRates), *reportPath)

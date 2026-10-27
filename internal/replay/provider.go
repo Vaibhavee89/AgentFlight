@@ -11,7 +11,6 @@ import (
 
 	"github.com/Vaibhavee89/agentflight/internal/provider"
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
-	"github.com/Vaibhavee89/agentflight/internal/runtime"
 )
 
 // ErrReplayExhausted indicates a replay ran out of recorded events for a
@@ -24,8 +23,9 @@ var ErrReplayExhausted = errors.New("replay: no more recorded events")
 var ErrCorruptRecording = errors.New("replay: corrupt recording")
 
 type requestResponsePair struct {
-	request  json.RawMessage
-	response provider.ModelResponse
+	requestSeq int64
+	request    json.RawMessage
+	response   provider.ModelResponse
 }
 
 // ReplayProvider implements runtime.ModelProvider by returning a run's
@@ -44,11 +44,13 @@ type ReplayProvider struct {
 func NewReplayProvider(events []recorder.Event) (*ReplayProvider, error) {
 	var pairs []requestResponsePair
 	var pendingRequest json.RawMessage
+	var pendingSeq int64
 
 	for _, e := range events {
 		switch e.Type {
 		case recorder.EventModelRequest:
 			pendingRequest = e.Payload
+			pendingSeq = e.Seq
 		case recorder.EventModelResponse:
 			if len(pendingRequest) == 0 {
 				return nil, fmt.Errorf("replay: model_response seq %d has no preceding model_request: %w", e.Seq, ErrCorruptRecording)
@@ -60,7 +62,7 @@ func NewReplayProvider(events []recorder.Event) (*ReplayProvider, error) {
 			if err := json.Unmarshal(e.Payload, &resp); err != nil {
 				return nil, fmt.Errorf("replay: decode model_response seq %d: %w: %w", e.Seq, ErrCorruptRecording, err)
 			}
-			pairs = append(pairs, requestResponsePair{request: pendingRequest, response: resp})
+			pairs = append(pairs, requestResponsePair{requestSeq: pendingSeq, request: pendingRequest, response: resp})
 			pendingRequest = nil
 		}
 	}
@@ -98,10 +100,10 @@ func (p *ReplayProvider) Complete(ctx context.Context, req provider.Request) (pr
 		return provider.ModelResponse{}, fmt.Errorf("replay: compare request at step %d: %w", step, err)
 	}
 	if !match {
-		return provider.ModelResponse{}, fmt.Errorf(
-			"replay: request mismatch at step %d: %w\n%s",
-			step, runtime.ErrReplayMismatch, diffSummary(pair.request, got),
-		)
+		return provider.ModelResponse{}, &MismatchError{
+			Seq:    pair.requestSeq,
+			Detail: fmt.Sprintf("request differs at step %d\n%s", step, diffSummary(pair.request, got)),
+		}
 	}
 
 	return pair.response, nil

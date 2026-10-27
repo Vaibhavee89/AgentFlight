@@ -7,11 +7,11 @@ import (
 	"fmt"
 
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
-	"github.com/Vaibhavee89/agentflight/internal/runtime"
 	"github.com/Vaibhavee89/agentflight/internal/tools"
 )
 
 type toolResultRecord struct {
+	seq    int64
 	name   string
 	output tools.ToolOutput
 	errMsg string
@@ -24,6 +24,10 @@ type toolResultRecord struct {
 type ReplayTool struct {
 	results []toolResultRecord
 	next    int
+	// mismatch is the first divergence seen. The runtime treats a tool error as
+	// a result and carries on, so Replay checks this after the run to make sure
+	// a mismatch cannot pass silently.
+	mismatch *MismatchError
 }
 
 // NewReplayTool builds a ReplayTool from a run's recorded tool_result events.
@@ -41,7 +45,7 @@ func NewReplayTool(events []recorder.Event) (*ReplayTool, error) {
 		if err := json.Unmarshal(e.Payload, &payload); err != nil {
 			return nil, fmt.Errorf("replay: decode tool_result seq %d: %w: %w", e.Seq, ErrCorruptRecording, err)
 		}
-		results = append(results, toolResultRecord{name: payload.Name, output: payload.Output, errMsg: payload.Error})
+		results = append(results, toolResultRecord{seq: e.Seq, name: payload.Name, output: payload.Output, errMsg: payload.Error})
 	}
 	return &ReplayTool{results: results}, nil
 }
@@ -61,10 +65,14 @@ func (t *ReplayTool) Execute(ctx context.Context, call tools.ToolCall) (tools.To
 	t.next++
 
 	if rec.name != call.Name {
-		return tools.ToolOutput{}, fmt.Errorf(
-			"replay: tool_result %d: recorded call %q, got call %q: %w",
-			index, rec.name, call.Name, runtime.ErrReplayMismatch,
-		)
+		m := &MismatchError{
+			Seq:    rec.seq,
+			Detail: fmt.Sprintf("tool_result %d: recorded call %q, got call %q", index, rec.name, call.Name),
+		}
+		if t.mismatch == nil {
+			t.mismatch = m
+		}
+		return tools.ToolOutput{}, m
 	}
 	if rec.errMsg != "" {
 		return tools.ToolOutput{}, errors.New(rec.errMsg)

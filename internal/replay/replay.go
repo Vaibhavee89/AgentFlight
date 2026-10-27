@@ -50,15 +50,18 @@ func Replay(ctx context.Context, store EventReader, runID string) (runtime.RunRe
 	rt := runtime.NewRuntime(modelProvider, tool, nil, runtime.WithMaxSteps(modelProvider.Len()))
 
 	result, err := rt.Run(ctx, runID, prompt)
+	if tool.mismatch != nil {
+		return runtime.RunResult{}, tool.mismatch
+	}
 	if err != nil {
 		return runtime.RunResult{}, fmt.Errorf("replay: run %s: %w", runID, err)
 	}
 
 	if result != original {
-		return runtime.RunResult{}, fmt.Errorf(
-			"replay: run %s: final result mismatch: recorded %+v, got %+v: %w",
-			runID, original, result, runtime.ErrReplayMismatch,
-		)
+		return runtime.RunResult{}, &MismatchError{
+			Seq:    finishedSeq(events),
+			Detail: fmt.Sprintf("final result differs: recorded %+v, got %+v", original, result),
+		}
 	}
 
 	return result, nil
@@ -93,4 +96,14 @@ func runFinishedResult(events []recorder.Event) (runtime.RunResult, error) {
 		return result, nil
 	}
 	return runtime.RunResult{}, fmt.Errorf("replay: no run_finished event found")
+}
+
+// finishedSeq returns the seq of the last run_finished event, or 0 if none.
+func finishedSeq(events []recorder.Event) int64 {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type == recorder.EventRunFinished {
+			return events[i].Seq
+		}
+	}
+	return 0
 }

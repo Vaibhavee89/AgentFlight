@@ -116,6 +116,45 @@ Profile a run with `--pprof 127.0.0.1:6060` on either CLI. See
 [docs/performance.md](docs/performance.md) for the profiling workflow and the
 findings.
 
+## HTTP API
+
+`agentflight serve` exposes runs over HTTP. The API is JSON unless noted.
+
+| Method and path | Purpose |
+| --- | --- |
+| `POST /runs` | Start a run from `{"prompt": "..."}`. Returns `202` with the run `id`. |
+| `GET /runs?limit=&status=` | List runs, newest first. `limit` is 1–200 (default 50). `status` is one of `running`, `completed`, `cancelled`, `failed`, `interrupted`. |
+| `GET /runs/{id}` | One run's status, content, and steps. |
+| `GET /runs/{id}/events` | The event log. With no parameters it returns the whole log. |
+| `GET /runs/{id}/events?after=&limit=` | Cursor page: events with `seq > after`, at most `limit` (default and maximum 1000). |
+| `GET /runs/{id}/stream` | Live Server-Sent Events. Each event's SSE `id` is its `seq`. Resume with `Last-Event-ID` or `?after=`. |
+| `POST /runs/{id}/cancel` | Cancel an active run. |
+| `POST /runs/{id}/resume` | Resume a cancelled or interrupted run from its last checkpoint. |
+| `POST /runs/{id}/replay` | Replay a finished run against its recording. Returns `{"ok", "mismatch_at_seq", "detail"}`. `mismatch_at_seq` is the seq of the first recorded event that disagreed, or `null`. |
+| `GET /bench/results` | `results.json` from `harnessbench run`, from `--bench-dir`. |
+| `GET /bench/compare` | `compare.json` from `harnessbench compare --json`, after a schema-version check. |
+| `GET /healthz` | Liveness and the active run count. |
+
+The stream sends `event: <type>` and `data: <json>` for each event. It sends
+a `: heartbeat` comment about every 15 seconds while idle. It closes after
+`run_finished`, or when the run is no longer executing and has nothing left to
+send. A client disconnect ends it immediately.
+
+`agentflight serve` flags for the UI and demos:
+
+- `--cors-origin http://localhost:5173` allows one browser origin, for local
+  Vite development. The default is off.
+- `--bench-dir docs` is where `/bench/` reads from.
+- `--demo-faults 0.2 --mock-latency 500ms` makes a fraction of tool calls hang
+  so the per-tool timeout and retries show in live runs. Faults are seeded with
+  `--demo-seed`. Model calls are not faulted, because the runtime does not
+  retry them and a fault would just fail the run. Runs execute concurrently,
+  so which call gets a fault depends on timing, but the seed fixes the
+  sequence within a single run.
+
+Migrations are read from the repository's `migrations/` directory. A binary
+run outside the checkout cannot find them yet.
+
 ## Using MCP tools
 
 Tools served by a [Model Context Protocol](https://modelcontextprotocol.io)

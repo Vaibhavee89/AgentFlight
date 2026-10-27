@@ -11,7 +11,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/Vaibhavee89/agentflight/internal/policy"
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
 	"github.com/Vaibhavee89/agentflight/internal/runtime"
 	"github.com/Vaibhavee89/agentflight/internal/storage"
@@ -30,8 +32,22 @@ type Config struct {
 	Tools runtime.ToolExecutor
 	// MaxSteps bounds each run. Zero uses the runtime default.
 	MaxSteps int
+	// NewPolicy, if set, builds a policy for each run. A fresh policy per run
+	// keeps its retry counter scoped to that run.
+	NewPolicy func() policy.Policy
 	// Logger receives server and runtime diagnostics. Nil discards them.
 	Logger *slog.Logger
+	// BenchDir holds harnessbench output served under /bench/. Empty disables
+	// those routes' data (they return 404).
+	BenchDir string
+	// CORSOrigin, if non-empty, is the single browser origin allowed to call
+	// the API cross-origin, for local frontend development. Empty disables CORS.
+	CORSOrigin string
+	// PollInterval is how often a stream checks the store for new events.
+	// Zero means 250ms.
+	PollInterval time.Duration
+	// Heartbeat is how often an idle stream sends a comment line. Zero means 15s.
+	Heartbeat time.Duration
 }
 
 // Server runs agent executions and serves their state over HTTP.
@@ -49,6 +65,12 @@ func NewServer(cfg Config) *Server {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if cfg.PollInterval <= 0 {
+		cfg.PollInterval = 250 * time.Millisecond
+	}
+	if cfg.Heartbeat <= 0 {
+		cfg.Heartbeat = 15 * time.Second
+	}
 	return &Server{
 		cfg:    cfg,
 		logger: logger,
@@ -61,12 +83,17 @@ func NewServer(cfg Config) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /runs", s.handleStart)
+	mux.HandleFunc("GET /runs", s.handleList)
 	mux.HandleFunc("GET /runs/{id}", s.handleGet)
 	mux.HandleFunc("GET /runs/{id}/events", s.handleEvents)
+	mux.HandleFunc("GET /runs/{id}/stream", s.handleStream)
 	mux.HandleFunc("POST /runs/{id}/cancel", s.handleCancel)
 	mux.HandleFunc("POST /runs/{id}/resume", s.handleResume)
+	mux.HandleFunc("POST /runs/{id}/replay", s.handleReplay)
+	mux.HandleFunc("GET /bench/results", s.handleBenchResults)
+	mux.HandleFunc("GET /bench/compare", s.handleBenchCompare)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	return mux
+	return s.withCORS(mux)
 }
 
 type startRequest struct {
@@ -128,6 +155,11 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	q := r.URL.Query()
+	if q.Has("after") || q.Has("limit") {
+		s.handleEventsPage(w, r, id)
+		return
+	}
 	events, err := s.cfg.Store.Events(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -208,6 +240,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "active_runs": s.runs.activeCount()})
 }
 
+// exists reports whether id is known to this process or has any recorded events.
+func (s *Server) exists(ctx context.Context, id string) (bool, error) {
+	if _, ok := s.runs.snapshot(id); ok {
+		return true, nil
+	}
+	last, err := s.cfg.Store.LastSeq(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	return last > 0, nil
+}
+
 // launch runs fn in its own goroutine under a cancellable context derived
 // from context.Background, so runs outlive the HTTP request that started them.
 // It returns false if the run is already active.
@@ -219,12 +263,16 @@ func (s *Server) launch(id string, fn func(ctx context.Context, rt *runtime.Runt
 		return false
 	}
 
-	rt := runtime.NewRuntime(s.cfg.Provider(), s.cfg.Tools, s.rec,
+	opts := []runtime.Option{
 		runtime.WithMaxSteps(s.cfg.MaxSteps),
 		runtime.WithCheckpoints(s.cfg.Store),
 		runtime.WithEventReader(s.cfg.Store),
 		runtime.WithLogger(s.logger),
-	)
+	}
+	if s.cfg.NewPolicy != nil {
+		opts = append(opts, runtime.WithPolicy(s.cfg.NewPolicy()))
+	}
+	rt := runtime.NewRuntime(s.cfg.Provider(), s.cfg.Tools, s.rec, opts...)
 
 	go func() {
 		defer close(done)

@@ -134,3 +134,22 @@ func (g *registry) activeCount() int {
 	}
 	return n
 }
+
+// active reports whether id has a goroutine executing it right now.
+func (g *registry) active(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	r, ok := g.runs[id]
+	return ok && r.cancel != nil
+}
+
+// allSnapshots returns a copy of every run this process has seen, keyed by id.
+func (g *registry) allSnapshots() map[string]run {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := make(map[string]run, len(g.runs))
+	for id, r := range g.runs {
+		out[id] = *r
+	}
+	return out
+}
