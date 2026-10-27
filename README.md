@@ -147,6 +147,14 @@ Error mapping: a deadline that expires during a call is `policy.ErrToolTimeout`
 reports an error in its result is `mcp.ErrToolReported`, and JSON-RPC protocol
 errors are terminal.
 
+Against a real third-party server, the same adapter lists and calls tools from
+`@modelcontextprotocol/server-filesystem`. Use a throwaway directory:
+
+```bash
+go run ./examples/mcp-filesystem -dir /tmp/mcp-sandbox \
+  -pkg @modelcontextprotocol/server-filesystem@<version>
+```
+
 The MCP SDK is confined to `internal/tools/mcp`. `make vet` fails if any other
 package imports it, as required by [AGENTS.md](AGENTS.md).
 
@@ -240,6 +248,9 @@ fixed alongside the ones that were.
 - The per-event SQLite commit is the main cost of recording. Batched group
   commit is the recommended next step, described in
   [docs/performance.md](docs/performance.md).
-- MCP tools work over stdio and streamable HTTP. Both are tested against
-  in-process fake servers; neither has been checked against a third-party
-  MCP server.
+- MCP tools work over stdio and streamable HTTP. The test suite uses
+  in-process fake servers. Stdio was also checked against a real third-party
+  server, `@modelcontextprotocol/server-filesystem`, run unpinned (the latest
+  release at the time, 2.0.1). It listed 14 tools and returned a file's
+  contents through `read_text_file`. HTTP has not been checked against a
+  third-party server.
