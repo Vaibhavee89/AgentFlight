@@ -135,7 +135,11 @@ func (p *DefaultPolicy) Execute(ctx context.Context, exec ToolExecutor, call too
 
 		atomic.AddInt64(&p.retries, 1)
 
-		if err := p.sleep(ctx, p.backoff(attempt)); err != nil {
+		delay := p.backoff(attempt)
+		if observe := retryObserverFrom(ctx); observe != nil {
+			observe(RetryNotice{Tool: call.Name, Attempt: attempt, Backoff: delay, Err: err})
+		}
+		if err := p.sleep(ctx, delay); err != nil {
 			return tools.ToolOutput{}, fmt.Errorf("policy: %w", err)
 		}
 	}

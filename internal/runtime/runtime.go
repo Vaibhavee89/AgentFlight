@@ -90,9 +90,12 @@ type toolResultPayload struct {
 }
 
 type policyDecisionPayload struct {
-	Tool    string `json:"tool"`
-	Allowed bool   `json:"allowed"`
-	Reason  string `json:"reason,omitempty"`
+	Tool      string `json:"tool"`
+	Allowed   bool   `json:"allowed"`
+	Reason    string `json:"reason,omitempty"`
+	Retry     bool   `json:"retry,omitempty"`
+	Attempt   int    `json:"attempt,omitempty"`
+	BackoffMS *int64 `json:"backoff_ms,omitempty"`
 }
 
 type checkpointPayload struct {
@@ -323,7 +326,23 @@ func (r *Runtime) runSingleToolCall(ctx context.Context, runID string, step, ind
 		r.logger.ErrorContext(ctx, "failed to record tool_call", "run_id", runID, "step", step, "index", index, "error", err)
 	}
 
-	output, execErr := r.executeTool(ctx, call)
+	callCtx := policy.WithRetryObserver(ctx, func(n policy.RetryNotice) {
+		backoff := n.Backoff.Milliseconds()
+		payload := policyDecisionPayload{
+			Tool:      n.Tool,
+			Allowed:   true,
+			Retry:     true,
+			Attempt:   n.Attempt,
+			BackoffMS: &backoff,
+		}
+		if n.Err != nil {
+			payload.Reason = n.Err.Error()
+		}
+		if err := r.record(ctx, runID, recorder.EventPolicyDecision, payload); err != nil {
+			r.logger.ErrorContext(ctx, "failed to record retry", "run_id", runID, "step", step, "index", index, "error", err)
+		}
+	})
+	output, execErr := r.executeTool(callCtx, call)
 
 	if err := r.recordPolicyDecision(ctx, runID, call, execErr); err != nil {
 		r.logger.ErrorContext(ctx, "failed to record policy_decision", "run_id", runID, "step", step, "index", index, "error", err)
