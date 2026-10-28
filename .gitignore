@@ -26,3 +26,9 @@ vendor/
 /harnessbench-*.db-*
 results.json
 report.md
+
+# web UI build output: keep the committed placeholder, ignore the rest
+web/node_modules/
+web/dist/*
+!web/dist/index.html
+web/*.tsbuildinfo

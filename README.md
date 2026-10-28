@@ -116,6 +116,22 @@ Profile a run with `--pprof 127.0.0.1:6060` on either CLI. See
 [docs/performance.md](docs/performance.md) for the profiling workflow and the
 findings.
 
+## Web UI
+
+The UI is a Vite + React + TypeScript app in `web/`. `agentflight serve` embeds
+the built app and serves it under `/ui/`, next to the API.
+
+```bash
+make web-build     # npm ci, then build into web/dist (embedded on the next go build)
+make build         # web-build, then go build
+go run ./cmd/agentflight serve --cors-origin http://localhost:5173
+
+make web-dev       # Vite dev server on :5173, proxying /runs, /bench, /healthz to :8080
+```
+
+A fresh clone builds without Node: `web/dist/index.html` is a committed
+placeholder, so `go build` works. Run `make build` to get the real UI.
+
 ## HTTP API
 
 `agentflight serve` exposes runs over HTTP. The API is JSON unless noted.

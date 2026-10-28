@@ -1,10 +1,19 @@
-.PHONY: build test race vet bench
+.PHONY: build test race vet bench web-install web-build web-dev
 
 MCP_SDK := github.com/modelcontextprotocol/go-sdk
 MCP_ALLOWED := ./internal/tools/mcp/
 
-build:
+build: web-build
 	go build ./...
+
+web-install:
+	cd web && npm ci
+
+web-build: web-install
+	cd web && npm run build
+
+web-dev:
+	cd web && npm run dev
 
 test:
 	go test ./...

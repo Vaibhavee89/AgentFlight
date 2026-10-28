@@ -17,6 +17,7 @@ import (
 	"github.com/Vaibhavee89/agentflight/internal/recorder"
 	"github.com/Vaibhavee89/agentflight/internal/runtime"
 	"github.com/Vaibhavee89/agentflight/internal/storage"
+	"github.com/Vaibhavee89/agentflight/internal/webui"
 )
 
 const maxBodyBytes = 64 << 10
@@ -93,6 +94,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /bench/results", s.handleBenchResults)
 	mux.HandleFunc("GET /bench/compare", s.handleBenchCompare)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, webui.Prefix+"/", http.StatusMovedPermanently)
+	})
+	mux.Handle(webui.Prefix+"/", webui.Handler())
 	return s.withCORS(mux)
 }
 
