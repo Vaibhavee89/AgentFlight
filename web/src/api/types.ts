@@ -32,3 +32,12 @@ export interface RunView {
 export interface ErrorBody {
   error: string;
 }
+
+/** One recorded event as the events and stream endpoints send it (api.eventView). */
+export interface RecordedEvent {
+  seq: number;
+  type: string;
+  version: number;
+  time: string;
+  payload: unknown;
+}

@@ -1,4 +1,4 @@
-import type { ErrorBody, Health, RunListItem, RunView } from "./types";
+import type { ErrorBody, Health, RecordedEvent, RunListItem, RunView } from "./types";
 
 /** An HTTP error from the API, carrying the server's message when it sent one. */
 export class ApiError extends Error {
@@ -92,6 +92,17 @@ function isRunListItem(value: unknown): value is RunListItem {
   );
 }
 
+function isRecordedEvent(value: unknown): value is RecordedEvent {
+  return (
+    isRecord(value) &&
+    typeof value.seq === "number" &&
+    typeof value.type === "string" &&
+    typeof value.version === "number" &&
+    typeof value.time === "string" &&
+    "payload" in value
+  );
+}
+
 function isRunView(value: unknown): value is RunView {
   return isRecord(value) && typeof value.id === "string" && typeof value.status === "string";
 }
@@ -127,4 +138,48 @@ export async function listRuns(
 export async function startRun(prompt: string, signal?: AbortSignal): Promise<RunView> {
   const body = await requestJSON("/runs", { method: "POST", body: { prompt }, signal });
   return ensure(body, "/runs", isRunView);
+}
+
+/** GET /runs/:id. Rejects with ApiError(404) for an unknown run. */
+export async function getRun(id: string, signal?: AbortSignal): Promise<RunView> {
+  const body = await requestJSON(`/runs/${encodeURIComponent(id)}`, { signal });
+  return ensure(body, "/runs/:id", isRunView);
+}
+
+export interface EventsPageQuery {
+  after?: number;
+  limit?: number;
+}
+
+/** GET /runs/:id/events with cursor paging: events with seq > after, up to limit. */
+export async function getEventsPage(
+  id: string,
+  query: EventsPageQuery = {},
+  signal?: AbortSignal,
+): Promise<RecordedEvent[]> {
+  const params = new URLSearchParams();
+  params.set("after", String(query.after ?? 0));
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  const body = await requestJSON(`/runs/${encodeURIComponent(id)}/events?${params.toString()}`, {
+    signal,
+  });
+  if (!Array.isArray(body)) {
+    throw new ApiError(0, "unexpected response from /runs/:id/events");
+  }
+  return body.map((item: unknown) => ensure(item, "/runs/:id/events", isRecordedEvent));
+}
+
+/** Path of the live Server-Sent Events stream for a run. */
+export function streamPath(id: string): string {
+  return `${API_BASE}/runs/${encodeURIComponent(id)}/stream`;
+}
+
+/** Decodes one SSE message body into a recorded event, or null if it is not one. */
+export function parseRecordedEvent(data: string): RecordedEvent | null {
+  try {
+    const value: unknown = JSON.parse(data);
+    return isRecordedEvent(value) ? value : null;
+  } catch {
+    return null;
+  }
 }

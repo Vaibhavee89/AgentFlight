@@ -40,6 +40,21 @@ const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 
+/** Formats a span in milliseconds as 450ms, 2.3s, 2m 5s, or 1h 5m. */
+export function formatMs(ms: number): string {
+  const span = Math.max(0, ms);
+  if (span < SECOND) return `${String(span)}ms`;
+  if (span < MINUTE) return `${(span / SECOND).toFixed(1)}s`;
+  if (span < HOUR) {
+    const m = Math.floor(span / MINUTE);
+    const s = Math.floor((span % MINUTE) / SECOND);
+    return `${String(m)}m ${String(s)}s`;
+  }
+  const h = Math.floor(span / HOUR);
+  const m = Math.floor((span % HOUR) / MINUTE);
+  return `${String(h)}h ${String(m)}m`;
+}
+
 /**
  * Formats how long a run has taken. A run without an end is measured to now.
  * Returns an em dash when the run has no start time.
@@ -52,15 +67,5 @@ export function formatDuration(
   if (startedAt === null) return "—";
   const start = Date.parse(startedAt);
   const end = finishedAt === null ? now : Date.parse(finishedAt);
-  const ms = Math.max(0, end - start);
-  if (ms < SECOND) return `${String(ms)}ms`;
-  if (ms < MINUTE) return `${(ms / SECOND).toFixed(1)}s`;
-  if (ms < HOUR) {
-    const m = Math.floor(ms / MINUTE);
-    const s = Math.floor((ms % MINUTE) / SECOND);
-    return `${String(m)}m ${String(s)}s`;
-  }
-  const h = Math.floor(ms / HOUR);
-  const m = Math.floor((ms % HOUR) / MINUTE);
-  return `${String(h)}h ${String(m)}m`;
+  return formatMs(end - start);
 }
