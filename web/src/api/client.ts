@@ -1,4 +1,11 @@
-import type { ErrorBody, Health, RecordedEvent, RunListItem, RunView } from "./types";
+import type {
+  ErrorBody,
+  Health,
+  RecordedEvent,
+  ReplayResponse,
+  RunListItem,
+  RunView,
+} from "./types";
 
 /** An HTTP error from the API, carrying the server's message when it sent one. */
 export class ApiError extends Error {
@@ -20,6 +27,8 @@ interface RequestOptions {
   method?: Method;
   body?: unknown;
   signal?: AbortSignal | undefined;
+  /** Statuses whose JSON body is a valid result rather than an error. */
+  acceptStatus?: readonly number[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -59,7 +68,8 @@ async function requestJSON(path: string, options: RequestOptions = {}): Promise<
   }
 
   const text = await response.text();
-  if (!response.ok) {
+  const accepted = options.acceptStatus?.includes(response.status) === true;
+  if (!response.ok && !accepted) {
     let message = response.statusText || `HTTP ${String(response.status)}`;
     try {
       const parsed: unknown = JSON.parse(text);
@@ -182,4 +192,44 @@ export function parseRecordedEvent(data: string): RecordedEvent | null {
   } catch {
     return null;
   }
+}
+
+function isReplayResponse(value: unknown): value is ReplayResponse {
+  return (
+    isRecord(value) &&
+    typeof value.ok === "boolean" &&
+    (value.mismatch_at_seq === null || typeof value.mismatch_at_seq === "number") &&
+    typeof value.detail === "string"
+  );
+}
+
+/** POST /runs/:id/cancel. The run stops at its next step boundary. */
+export async function cancelRun(id: string, signal?: AbortSignal): Promise<RunView> {
+  const body = await requestJSON(`/runs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+    signal,
+  });
+  return ensure(body, "/runs/:id/cancel", isRunView);
+}
+
+/** POST /runs/:id/resume. Continues from the last checkpoint. */
+export async function resumeRun(id: string, signal?: AbortSignal): Promise<RunView> {
+  const body = await requestJSON(`/runs/${encodeURIComponent(id)}/resume`, {
+    method: "POST",
+    signal,
+  });
+  return ensure(body, "/runs/:id/resume", isRunView);
+}
+
+/**
+ * POST /runs/:id/replay. A divergence (200) and a run that cannot be replayed
+ * (422) both carry a ReplayResponse, so both resolve. Other failures reject.
+ */
+export async function replayRun(id: string, signal?: AbortSignal): Promise<ReplayResponse> {
+  const body = await requestJSON(`/runs/${encodeURIComponent(id)}/replay`, {
+    method: "POST",
+    signal,
+    acceptStatus: [422],
+  });
+  return ensure(body, "/runs/:id/replay", isReplayResponse);
 }

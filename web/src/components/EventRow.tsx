@@ -10,10 +10,13 @@ export const PREVIEW_CHARS = 1200;
 
 interface EventRowProps {
   item: TimelineEvent;
+  /** Set on the event a replay diverged at: it opens and is marked. */
+  highlighted?: boolean;
 }
 
-export function EventRow({ item }: EventRowProps) {
+export function EventRow({ item, highlighted = false }: EventRowProps) {
   const [open, setOpen] = useState(false);
+  const expanded = open || highlighted;
   const [showAll, setShowAll] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -34,11 +37,14 @@ export function EventRow({ item }: EventRowProps) {
   };
 
   return (
-    <li className={`event event-${style.tone}${retry !== null ? " event-retry" : ""}`}>
+    <li
+      id={`event-${String(event.seq)}`}
+      className={`event event-${style.tone}${retry !== null ? " event-retry" : ""}${highlighted ? " event-highlight" : ""}`}
+    >
       <button
         type="button"
         className="event-head"
-        aria-expanded={open}
+        aria-expanded={expanded}
         onClick={() => {
           setOpen((v) => !v);
         }}
@@ -51,7 +57,7 @@ export function EventRow({ item }: EventRowProps) {
         <span className="event-summary">{line}</span>
         <span className="event-seq">#{event.seq}</span>
       </button>
-      {open && (
+      {expanded && (
         <div className="event-body">
           <div className="event-tools">
             <button type="button" className="button button-small" onClick={copy}>

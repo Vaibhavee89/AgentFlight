@@ -5,6 +5,7 @@ import { EventRow } from "./EventRow";
 interface TimelineProps {
   groups: StepGroup[];
   hidden: ReadonlySet<string>;
+  highlightSeq?: number | null;
 }
 
 function groupTitle(group: StepGroup): string {
@@ -19,7 +20,7 @@ function groupTitle(group: StepGroup): string {
 }
 
 /** Vertical timeline, one section per step, with per-step durations. */
-export function Timeline({ groups, hidden }: TimelineProps) {
+export function Timeline({ groups, hidden, highlightSeq = null }: TimelineProps) {
   const sections = groups
     .map((group) => ({ group, events: group.events.filter((e) => !hidden.has(e.event.type)) }))
     .filter(({ events }) => events.length > 0);
@@ -42,7 +43,11 @@ export function Timeline({ groups, hidden }: TimelineProps) {
           </header>
           <ol className="events">
             {events.map((item) => (
-              <EventRow key={item.event.seq} item={item} />
+              <EventRow
+                key={item.event.seq}
+                item={item}
+                highlighted={item.event.seq === highlightSeq}
+              />
             ))}
           </ol>
         </section>

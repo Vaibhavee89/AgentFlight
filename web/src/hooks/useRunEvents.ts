@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, getEventsPage, getRun, parseRecordedEvent, streamPath } from "../api/client";
 import type { RecordedEvent } from "../api/types";
 import { asRecord, stringAt } from "../lib/payloads";
@@ -38,8 +38,14 @@ const INITIAL: RunEventsState = {
  * stream is also closed as soon as run_finished arrives, before the server
  * closes it, so the browser does not reconnect to a finished run.
  */
-export function useRunEvents(runId: string): RunEventsState {
+export interface RunEvents extends RunEventsState {
+  /** Discards the local copy and re-reads the run from the server. */
+  reload: () => void;
+}
+
+export function useRunEvents(runId: string): RunEvents {
   const [state, setState] = useState<RunEventsState>(INITIAL);
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -47,9 +53,15 @@ export function useRunEvents(runId: string): RunEventsState {
     const store = new EventStore();
     let source: EventSource | null = null;
 
-    const publish = (patch: Partial<RunEventsState>) => {
+    // Status-only updates keep the events already on screen, so a reconnect or
+    // a status check does not blank the timeline while the data reloads.
+    const publish = (patch: Partial<RunEventsState>, withEvents = true) => {
       if (cancelled()) return;
-      setState((prev) => ({ ...prev, events: store.snapshot(), ...patch }));
+      setState((prev) => ({
+        ...prev,
+        ...(withEvents ? { events: store.snapshot() } : {}),
+        ...patch,
+      }));
     };
 
     const closeSource = () => {
@@ -118,7 +130,7 @@ export function useRunEvents(runId: string): RunEventsState {
       try {
         const run = await getRun(runId, controller.signal);
         if (cancelled()) return;
-        publish({ runStatus: run.status });
+        publish({ runStatus: run.status }, false);
         if (run.status === "running") {
           openStream();
           return;
@@ -141,7 +153,11 @@ export function useRunEvents(runId: string): RunEventsState {
       controller.abort();
       closeSource();
     };
-  }, [runId]);
+  }, [runId, generation]);
 
-  return state;
+  const reload = useCallback(() => {
+    setGeneration((g) => g + 1);
+  }, []);
+
+  return { ...state, reload };
 }

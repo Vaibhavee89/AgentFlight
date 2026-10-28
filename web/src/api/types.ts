@@ -33,6 +33,13 @@ export interface ErrorBody {
   error: string;
 }
 
+/** Response of POST /runs/:id/replay (api.replayResponse). */
+export interface ReplayResponse {
+  ok: boolean;
+  mismatch_at_seq: number | null;
+  detail: string;
+}
+
 /** One recorded event as the events and stream endpoints send it (api.eventView). */
 export interface RecordedEvent {
   seq: number;

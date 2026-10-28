@@ -32,3 +32,8 @@ export function json(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+/** The HTTP method of a fetch call, defaulting to GET as fetch does. */
+export function methodOf(init: RequestInit | undefined): string {
+  return typeof init?.method === "string" ? init.method : "GET";
+}
