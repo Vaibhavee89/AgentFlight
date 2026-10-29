@@ -48,3 +48,39 @@ export interface RecordedEvent {
   time: string;
   payload: unknown;
 }
+
+/** One runtime at one fault rate (benchmark.RuntimeFaultRow). Latency is p95 in milliseconds. */
+export interface RuntimeFaultRow {
+  runtime: string;
+  fault_rate: number;
+  executions: number;
+  success_rate: number;
+  mean_steps: number;
+  p95_latency_ms: number;
+  duplicate_tool_execs: number;
+  runs_with_final_state: number;
+}
+
+/** One runtime's mid-run kill-and-recover results (benchmark.KillRow). */
+export interface KillRow {
+  runtime: string;
+  attempts: number;
+  recovered: number;
+  recovery_rate: number;
+  total_tool_execs: number;
+  expected_tool_execs: number;
+  duplicate_tool_execs: number;
+}
+
+/** GET /bench/compare (benchmark.CompareDocument). Only schema version 1 is understood. */
+export interface CompareDocument {
+  schema_version: number;
+  generated_at: string;
+  git_commit: string;
+  seed: number;
+  suite: string;
+  repeats: number;
+  fault_rates: number[];
+  rows: RuntimeFaultRow[];
+  kill_scenario: KillRow[];
+}

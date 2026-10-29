@@ -549,3 +549,137 @@ textarea {
   margin-top: var(--space-2);
   color: var(--bad);
 }
+
+.bench-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
+}
+
+.bench-meta dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bench-meta dd {
+  margin: 0;
+}
+
+.chart {
+  margin: var(--space-2) 0 var(--space-4);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.chart-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.bench-table th.num,
+.bench-table td.num {
+  text-align: right;
+}
+
+.bench-table caption {
+  text-align: left;
+  color: var(--muted);
+  padding: var(--space-2) 0;
+}
+
+.th-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tip {
+  position: relative;
+  display: inline-block;
+}
+
+.tip-trigger {
+  font: inherit;
+  font-size: 0.75rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+  background: transparent;
+  color: var(--muted);
+  cursor: help;
+  padding: 0;
+}
+
+.tip-body {
+  position: absolute;
+  z-index: 10;
+  bottom: 130%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 400;
+  white-space: normal;
+  text-align: left;
+  display: none;
+}
+
+.tip:hover .tip-body,
+.tip:focus-within .tip-body {
+  display: block;
+}
+
+.kill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.kill-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-3);
+}
+
+.kill-card h3 {
+  margin: 0 0 var(--space-2);
+}
+
+.kill-score {
+  margin: 0 0 var(--space-2);
+  font-size: 1.1rem;
+}
+
+.kill-card progress {
+  width: 100%;
+  height: 0.6rem;
+}
+
+.command {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+
+.data-fallback {
+  margin-top: var(--space-4);
+  color: var(--muted);
+}

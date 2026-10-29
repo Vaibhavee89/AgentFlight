@@ -1,10 +1,13 @@
 import type {
+  CompareDocument,
   ErrorBody,
   Health,
+  KillRow,
   RecordedEvent,
   ReplayResponse,
   RunListItem,
   RunView,
+  RuntimeFaultRow,
 } from "./types";
 
 /** An HTTP error from the API, carrying the server's message when it sent one. */
@@ -232,4 +235,61 @@ export async function replayRun(id: string, signal?: AbortSignal): Promise<Repla
     acceptStatus: [422],
   });
   return ensure(body, "/runs/:id/replay", isReplayResponse);
+}
+
+function isRuntimeFaultRow(value: unknown): value is RuntimeFaultRow {
+  return (
+    isRecord(value) &&
+    typeof value.runtime === "string" &&
+    typeof value.fault_rate === "number" &&
+    typeof value.executions === "number" &&
+    typeof value.success_rate === "number" &&
+    typeof value.mean_steps === "number" &&
+    typeof value.p95_latency_ms === "number" &&
+    typeof value.duplicate_tool_execs === "number" &&
+    typeof value.runs_with_final_state === "number"
+  );
+}
+
+function isKillRow(value: unknown): value is KillRow {
+  return (
+    isRecord(value) &&
+    typeof value.runtime === "string" &&
+    typeof value.attempts === "number" &&
+    typeof value.recovered === "number" &&
+    typeof value.recovery_rate === "number" &&
+    typeof value.total_tool_execs === "number" &&
+    typeof value.expected_tool_execs === "number" &&
+    typeof value.duplicate_tool_execs === "number"
+  );
+}
+
+function isCompareDocument(value: unknown): value is CompareDocument {
+  return (
+    isRecord(value) &&
+    typeof value.schema_version === "number" &&
+    typeof value.generated_at === "string" &&
+    typeof value.git_commit === "string" &&
+    typeof value.seed === "number" &&
+    typeof value.suite === "string" &&
+    typeof value.repeats === "number" &&
+    Array.isArray(value.fault_rates) &&
+    Array.isArray(value.rows) &&
+    Array.isArray(value.kill_scenario)
+  );
+}
+
+/**
+ * GET /bench/compare. Rejects with ApiError(404) when no results have been
+ * generated yet; the message names the command that produces them.
+ */
+export async function getBenchCompare(signal?: AbortSignal): Promise<CompareDocument> {
+  const body = await requestJSON("/bench/compare", { signal });
+  const doc = ensure(body, "/bench/compare", isCompareDocument);
+  if (doc.schema_version !== 1) {
+    throw new ApiError(0, `unsupported benchmark schema version ${String(doc.schema_version)}`);
+  }
+  for (const row of doc.rows) ensure(row, "/bench/compare", isRuntimeFaultRow);
+  for (const row of doc.kill_scenario) ensure(row, "/bench/compare", isKillRow);
+  return doc;
 }
