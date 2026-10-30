@@ -158,7 +158,8 @@ func (s *SQLiteStore) SaveCheckpoint(ctx context.Context, cp recovery.Checkpoint
 		return fmt.Errorf("storage: encode checkpoint run=%s step=%d: %w", cp.RunID, cp.Step, err)
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO checkpoints (run_id, seq, state, created_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO checkpoints (run_id, seq, state, created_at) VALUES (?, ?, ?, ?)
+		 ON CONFLICT (run_id, seq) DO UPDATE SET state = excluded.state, created_at = excluded.created_at`,
 		cp.RunID, cp.Step, data, cp.SavedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {

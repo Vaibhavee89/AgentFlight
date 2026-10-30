@@ -142,3 +142,26 @@ func TestSQLiteStore_SaveCheckpointAndLatestCheckpoint(t *testing.T) {
 		t.Fatalf("LatestCheckpoint().Request.ToolResults = %+v, want one echo call", got.Request.ToolResults)
 	}
 }
+
+// A cancelled run saves a checkpoint for the step it was already on, which is
+// the one saved after the previous step. Re-saving the same step must succeed.
+func TestSQLiteStore_ResaveCheckpointSameStep(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	first := recovery.Checkpoint{RunID: "run-1", Step: 1, Request: provider.Request{Prompt: "hi"}, SavedAt: time.Now().UTC()}
+	if err := store.SaveCheckpoint(ctx, first); err != nil {
+		t.Fatalf("first SaveCheckpoint: %v", err)
+	}
+	again := first
+	again.Request = provider.Request{Prompt: "hi again"}
+	if err := store.SaveCheckpoint(ctx, again); err != nil {
+		t.Fatalf("re-save of step 1 failed: %v", err)
+	}
+	got, found, err := store.LatestCheckpoint(ctx, "run-1")
+	if err != nil || !found {
+		t.Fatalf("LatestCheckpoint found=%v err=%v", found, err)
+	}
+	if got.Request.Prompt != "hi again" {
+		t.Fatalf("latest prompt = %q, want the re-saved request", got.Request.Prompt)
+	}
+}
