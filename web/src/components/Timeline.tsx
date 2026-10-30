@@ -1,5 +1,7 @@
+import type { KeyboardEvent } from "react";
 import type { StepGroup } from "../lib/timeline";
 import { formatMs } from "../lib/status";
+import { nextIndex } from "../lib/keyboard";
 import { EventRow } from "./EventRow";
 
 interface TimelineProps {
@@ -29,8 +31,25 @@ export function Timeline({ groups, hidden, highlightSeq = null }: TimelineProps)
     return <p className="muted">No events match the current filters.</p>;
   }
 
+  // Arrow keys, Home, and End move between event rows. Enter and Space, on the
+  // focused row, expand it through its own button.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const heads = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(".event-head"),
+    );
+    const current = heads.findIndex((h) => h === document.activeElement);
+    const target = nextIndex(current, heads.length, event.key);
+    if (target === null) return;
+    event.preventDefault();
+    heads[target]?.focus();
+  };
+
   return (
-    <div className="timeline">
+    <div className="timeline" role="region" aria-label="Event timeline" onKeyDown={onKeyDown}>
+      <p className="sr-only">
+        Use the arrow keys to move between events, Home and End to jump to the first or last, and
+        Enter to expand.
+      </p>
       {sections.map(({ group, events }) => (
         <section
           key={group.id}

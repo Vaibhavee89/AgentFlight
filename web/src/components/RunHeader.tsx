@@ -34,7 +34,9 @@ export function RunHeader({
         <h1>Run</h1>
         <code className="run-id">{runId}</code>
         <StatusBadge status={status} />
-        {live && <span className="live-dot">live</span>}
+        <span className={`live-dot${live ? "" : " is-idle"}`} aria-hidden={!live}>
+          live
+        </span>
       </div>
       <dl className="run-stats">
         <div>

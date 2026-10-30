@@ -45,12 +45,15 @@ flowchart LR
     subgraph Clients
         CLI[agentflight CLI]
         HTTP[HTTP clients]
+        BROWSER[Browser: web UI<br/>React, embedded at /ui/]
         BENCH[harnessbench]
     end
 
-    HTTP --> API[api: runs, registry, graceful shutdown]
+    BROWSER -- REST, SSE --> API
+    HTTP --> API[api: runs, SSE stream, replay, bench<br/>registry, graceful shutdown]
     CLI --> API
     BENCH --> SUITE[benchmark.Runner<br/>worker pool, errgroup]
+    BENCH -- compare.json --> API
 
     API --> RT[runtime.Runtime<br/>step loop, errgroup per step]
     SUITE --> RT
@@ -68,10 +71,50 @@ flowchart LR
     FAULT -. wraps .-> TOOLS
 ```
 
+The web UI is a React app that the server embeds and serves under `/ui/`. It
+reads the same API as any other client, and it follows live runs over
+Server-Sent Events. It has no privileged path into the runtime.
+
 The runtime is the only component that drives a run. Everything else plugs
 into it through small interfaces: `ModelProvider`, `ToolExecutor`, `Recorder`,
 `recovery.Store`, and `policy.Policy`. The SQLite event log is the source of
 truth. Replay, resume, grading, and the API's run views are all read from it.
+
+## Dashboard
+
+The web UI at `/ui/` is a flight recorder for agent runs. Its three views:
+
+**Runs.** Every run with its status, duration, steps, tool calls, retries, and
+token counts. Filter by status, or start a run from the dialog.
+
+![Runs list](docs/screenshots/runs-list.png)
+
+**Run detail.** The event log as a timeline, grouped by step. Each event
+shows its offset from the start of the run and its duration. A retry is
+highlighted with the attempt that failed and its backoff, and each event
+expands to its JSON payload. Cancel, resume, and Verify replay are in the
+header. A replay that diverges scrolls to and highlights the event where it
+diverged.
+
+![Timeline with a retry expanded](docs/screenshots/timeline-retry.png)
+
+**Benchmarks.** Success rate against fault rate for AgentFlight and the
+baseline, p95 latency with a log-scale toggle, duplicate tool executions, and
+the kill-and-resume results. The charts are read from the file that
+`harnessbench compare --json` writes.
+
+![Benchmark charts](docs/screenshots/benchmarks.png)
+
+A run streaming into the timeline as it executes:
+
+![A run streaming in](docs/screenshots/run-streaming.gif)
+
+Start it with `make demo`. That builds the UI and the binary, starts the server
+with seeded faults, and fills it with sample runs, including one that was
+cancelled and then resumed. Then open <http://127.0.0.1:8080/ui/runs>.
+
+The browser suite drives the real app: it creates a run, watches it finish,
+opens its events, and verifies its replay. Run it with `make e2e`.
 
 ## Quickstart (mock mode, no API key)
 

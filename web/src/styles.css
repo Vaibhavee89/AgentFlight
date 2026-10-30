@@ -683,3 +683,60 @@ textarea {
   margin-top: var(--space-4);
   color: var(--muted);
 }
+
+/* Focus: a visible ring for keyboard users only, never for mouse clicks. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Stable geometry, so live updates do not move anything around them. */
+.run-stats dd {
+  min-width: 7ch;
+}
+
+.live-dot {
+  display: inline-block;
+  min-width: 4.5ch;
+  visibility: visible;
+}
+
+.live-dot.is-idle {
+  visibility: hidden;
+}
+
+.run-actions,
+.confirm {
+  min-height: 2.5rem;
+}
+
+.chips .chip-count {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+}
+
+.badge {
+  min-width: 6.5rem;
+  text-align: center;
+}
+
+.event-head {
+  min-height: 1.9rem;
+}

@@ -32,3 +32,11 @@ web/node_modules/
 web/dist/*
 !web/dist/index.html
 web/*.tsbuildinfo
+
+# demo database
+/demo.db*
+
+# e2e and playwright output
+/e2e.db*
+web/test-results/
+web/playwright-report/
