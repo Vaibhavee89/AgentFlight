@@ -4,6 +4,10 @@ import { defineConfig, devices } from "@playwright/test";
 // own port and database, so it never touches demo data.
 const PORT = 18080;
 
+// A second server with authentication on, for the login flow.
+const AUTH_PORT = 18081;
+const AUTH_TOKEN = "e2e-token-0123456789abcdef";
+
 export default defineConfig({
   testDir: "e2e",
   timeout: 60_000,
@@ -15,10 +19,18 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: `rm -f ../e2e.db ../e2e.db-wal ../e2e.db-shm && ../bin/agentflight serve --addr 127.0.0.1:${String(PORT)} --db ../e2e.db --mock-latency 400ms --bench-dir ../docs`,
-    url: `http://127.0.0.1:${String(PORT)}/healthz`,
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: `rm -f ../e2e.db ../e2e.db-wal ../e2e.db-shm && ../bin/agentflight serve --addr 127.0.0.1:${String(PORT)} --db ../e2e.db --mock-latency 400ms --bench-dir ../docs`,
+      url: `http://127.0.0.1:${String(PORT)}/healthz`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    {
+      command: `rm -f ../e2e-auth.db ../e2e-auth.db-wal ../e2e-auth.db-shm && AGENTFLIGHT_API_TOKEN=${AUTH_TOKEN} ../bin/agentflight serve --addr 127.0.0.1:${String(AUTH_PORT)} --db ../e2e-auth.db --mock-latency 400ms --bench-dir ../docs`,
+      url: `http://127.0.0.1:${String(AUTH_PORT)}/healthz`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+  ],
 });

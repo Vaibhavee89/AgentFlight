@@ -24,6 +24,8 @@ func main() {
 		runReplay(os.Args[2:])
 	case "serve":
 		runServe(os.Args[2:])
+	case "token":
+		runToken()
 	default:
 		fmt.Println("agentflight " + version)
 	}

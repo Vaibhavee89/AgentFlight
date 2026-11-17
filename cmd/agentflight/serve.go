@@ -36,6 +36,8 @@ func runServe(args []string) {
 	shutdownTimeout := fs.Duration("shutdown-timeout", 15*time.Second, "how long to wait for active runs on shutdown")
 	benchDir := fs.String("bench-dir", "docs", "directory with harnessbench output, served under /bench/")
 	corsOrigin := fs.String("cors-origin", "", "single browser origin allowed to call the API; empty disables CORS")
+	authTokenFile := fs.String("auth-token-file", "", "file of API tokens, one per line; also read from "+tokenEnvVar+". With any token set, the API needs one")
+	insecureNoAuth := fs.Bool("insecure-no-auth", false, "allow listening beyond loopback with no authentication")
 	demoFaults := fs.Float64("demo-faults", 0, "probability in [0,1] that a tool call hangs (retried by the policy)")
 	demoSeed := fs.Int64("demo-seed", 1, "seed for --demo-faults")
 	fs.Parse(args)
@@ -56,6 +58,12 @@ func runServe(args []string) {
 	}
 	if *providerName == "anthropic" && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		fmt.Fprintln(os.Stderr, "--provider anthropic needs the ANTHROPIC_API_KEY environment variable")
+		os.Exit(2)
+	}
+
+	authTokens, err := loadAuthTokens(*authTokenFile, os.Getenv(tokenEnvVar))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth: %v\n", err)
 		os.Exit(2)
 	}
 
@@ -125,6 +133,7 @@ func runServe(args []string) {
 		Logger:     logger,
 		BenchDir:   *benchDir,
 		CORSOrigin: *corsOrigin,
+		AuthTokens: authTokens,
 	})
 
 	ln, err := net.Listen("tcp", *addr)
@@ -132,7 +141,15 @@ func runServe(args []string) {
 		fmt.Fprintf(os.Stderr, "listen on %s: %v\n", *addr, err)
 		os.Exit(1)
 	}
-	logger.Info("serving", "addr", ln.Addr().String(), "db", *dbPath, "provider", *providerName, "model", *model, "demo_faults", *demoFaults)
+	if err := checkExposure(ln.Addr(), len(authTokens) > 0, *insecureNoAuth); err != nil {
+		ln.Close()
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(2)
+	}
+	if len(authTokens) == 0 {
+		logger.Warn("authentication is off: anyone who can reach this address can start runs")
+	}
+	logger.Info("serving", "addr", ln.Addr().String(), "db", *dbPath, "provider", *providerName, "model", *model, "demo_faults", *demoFaults, "auth", len(authTokens) > 0)
 
 	if err := api.Serve(ctx, ln, srv, *shutdownTimeout); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)

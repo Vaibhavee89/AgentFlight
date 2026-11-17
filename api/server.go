@@ -44,6 +44,10 @@ type Config struct {
 	// CORSOrigin, if non-empty, is the single browser origin allowed to call
 	// the API cross-origin, for local frontend development. Empty disables CORS.
 	CORSOrigin string
+	// AuthTokens, if non-empty, turns authentication on: every route except
+	// /healthz, the static UI and the session endpoints needs one of these as a
+	// bearer token or a session from POST /login. Empty leaves the API open.
+	AuthTokens []string
 	// PollInterval is how often a stream checks the store for new events.
 	// Zero means 250ms.
 	PollInterval time.Duration
@@ -57,6 +61,8 @@ type Server struct {
 	logger *slog.Logger
 	rec    *recorder.Recorder
 	runs   *registry
+	// auth is nil when authentication is off.
+	auth *authenticator
 }
 
 // NewServer builds a Server. All runs share one Recorder, so each run's
@@ -72,12 +78,16 @@ func NewServer(cfg Config) *Server {
 	if cfg.Heartbeat <= 0 {
 		cfg.Heartbeat = 15 * time.Second
 	}
-	return &Server{
+	srv := &Server{
 		cfg:    cfg,
 		logger: logger,
 		rec:    recorder.NewRecorder(cfg.Store),
 		runs:   newRegistry(),
 	}
+	if len(cfg.AuthTokens) > 0 {
+		srv.auth = newAuthenticator(cfg.AuthTokens, time.Now)
+	}
+	return srv
 }
 
 // Handler returns the HTTP routes for the server.
@@ -94,11 +104,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /bench/results", s.handleBenchResults)
 	mux.HandleFunc("GET /bench/compare", s.handleBenchCompare)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /session", s.handleSession)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, webui.Prefix+"/", http.StatusMovedPermanently)
 	})
 	mux.Handle(webui.Prefix+"/", webui.Handler())
-	return s.withCORS(mux)
+	return s.withCORS(s.withAuth(mux))
 }
 
 type startRequest struct {

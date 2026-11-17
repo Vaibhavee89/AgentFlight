@@ -84,3 +84,9 @@ export interface CompareDocument {
   rows: RuntimeFaultRow[];
   kill_scenario: KillRow[];
 }
+
+/** GET /session: mirrors the Go sessionView struct. */
+export interface SessionState {
+  auth_required: boolean;
+  authenticated: boolean;
+}

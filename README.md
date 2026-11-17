@@ -116,6 +116,52 @@ cancelled and then resumed. Then open <http://127.0.0.1:8080/ui/runs>.
 The browser suite drives the real app: it creates a run, watches it finish,
 opens its events, and verifies its replay. Run it with `make e2e`.
 
+## Authentication
+
+Authentication is off by default, which is fine on a laptop because the server
+listens on loopback. It turns on when you give the server a token:
+
+```bash
+./bin/agentflight token                        # prints a random 64-character token
+export AGENTFLIGHT_API_TOKEN=<that token>      # or: --auth-token-file tokens.txt
+./bin/agentflight serve --addr 0.0.0.0:8080
+```
+
+With a token set, every route needs credentials except `/healthz`, the static
+UI files, and the session endpoints (`/session`, `/login`, `/logout`). That
+includes the benchmark data.
+
+- **Scripts and CLIs** send `Authorization: Bearer <token>`.
+- **The dashboard** shows a login form and trades the token for a session
+  cookie. The cookie is `HttpOnly` (page scripts cannot read it) and
+  `SameSite=Strict`, and it is what lets the browser's `EventSource` stream stay
+  authenticated, since `EventSource` cannot send headers. A write that carries a
+  session cookie and a foreign `Origin` header is refused. Sessions last 12
+  hours.
+- **Several tokens** can be listed, one per line in the token file (`#` starts a
+  comment), so a new token can be rolled out before the old one is removed.
+  Tokens must be at least 16 characters. They are compared in constant time and
+  are never logged.
+- **Guessing is throttled.** Ten wrong tokens from one address in a minute earn
+  a 429 until the minute is up.
+- **No open server on a reachable address.** Listening on anything but loopback
+  without a token is refused at startup. `--insecure-no-auth` overrides that.
+
+What this does not cover:
+
+- There is one level of access. A token can do everything, including cancel
+  other people's runs. There are no users, scopes or per-token budgets.
+- Sessions live in memory, so a restart signs everyone out.
+- The server does not terminate TLS. Put it behind a reverse proxy that does,
+  because the token and cookie otherwise cross the network in the clear. The
+  session cookie is only marked `Secure` when the server itself sees TLS, so
+  behind a proxy that is the proxy's job.
+- The throttle keys on the connection's address and ignores `X-Forwarded-For`,
+  which a client can forge. Behind a proxy every request shares the proxy's
+  address, so the throttle is shared too.
+- `--cors-origin` is for local frontend development without authentication. A
+  cross-origin page cannot log in, because the session cookie is `SameSite=Strict`.
+
 ## Conversation history
 
 Each model call gets the whole conversation so far: the prompt, the tool calls

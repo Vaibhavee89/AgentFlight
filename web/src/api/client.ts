@@ -8,6 +8,7 @@ import type {
   RunListItem,
   RunView,
   RuntimeFaultRow,
+  SessionState,
 } from "./types";
 
 /** An HTTP error from the API, carrying the server's message when it sent one. */
@@ -20,6 +21,16 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
+
+/**
+ * Fired on window when the API answers 401 to anything but a login attempt or
+ * the session check, meaning the session ended. The auth gate listens for it
+ * and shows the login form again.
+ */
+export const UNAUTHORIZED_EVENT = "agentflight:unauthorized";
+
+/** Paths whose 401 means "wrong credentials", not "your session ended". */
+const AUTH_PATHS: readonly string[] = ["/login", "/session"];
 
 /** The API is served from the same origin as the UI, so paths are relative. */
 const API_BASE = "";
@@ -70,6 +81,10 @@ async function requestJSON(path: string, options: RequestOptions = {}): Promise<
     throw new ApiError(0, "cannot reach the AgentFlight API");
   }
 
+  if (response.status === 401 && !AUTH_PATHS.includes(path)) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+
   const text = await response.text();
   const accepted = options.acceptStatus?.includes(response.status) === true;
   if (!response.ok && !accepted) {
@@ -82,6 +97,8 @@ async function requestJSON(path: string, options: RequestOptions = {}): Promise<
     }
     throw new ApiError(response.status, message);
   }
+  // 204 No Content (login, logout) has no body to decode.
+  if (response.status === 204) return null;
   return JSON.parse(text) as unknown;
 }
 
@@ -292,4 +309,32 @@ export async function getBenchCompare(signal?: AbortSignal): Promise<CompareDocu
   for (const row of doc.rows) ensure(row, "/bench/compare", isRuntimeFaultRow);
   for (const row of doc.kill_scenario) ensure(row, "/bench/compare", isKillRow);
   return doc;
+}
+
+function isSessionState(value: unknown): value is SessionState {
+  return (
+    isRecord(value) &&
+    typeof value.auth_required === "boolean" &&
+    typeof value.authenticated === "boolean"
+  );
+}
+
+/** GET /session: whether the server wants a login, and whether this browser has one. */
+export async function getSession(signal?: AbortSignal): Promise<SessionState> {
+  const body = await requestJSON("/session", { signal });
+  return ensure(body, "/session", isSessionState);
+}
+
+/**
+ * POST /login. On success the server sets an HttpOnly session cookie, which the
+ * browser sends from then on, including on the EventSource stream. Rejects with
+ * ApiError(401) for a wrong token and ApiError(429) when throttled.
+ */
+export async function login(token: string, signal?: AbortSignal): Promise<void> {
+  await requestJSON("/login", { method: "POST", body: { token }, signal });
+}
+
+/** POST /logout: ends the session on the server and clears the cookie. */
+export async function logout(signal?: AbortSignal): Promise<void> {
+  await requestJSON("/logout", { method: "POST", signal });
 }
