@@ -18,8 +18,11 @@ type EventReader interface {
 // Replay rebuilds the run recorded under runID in store: it replays the
 // original prompt through a Runtime wired with a ReplayProvider and
 // ReplayTool (so every provider call and tool call is checked against what
-// was recorded, rather than re-executed), and checks that the resulting
-// RunResult equals the one originally recorded.
+// was recorded, rather than re-executed), and checks that the run reaches the
+// same outcome as the one originally recorded. The outcome is the run id,
+// final content, step count and status. Usage and Retries are not compared:
+// they are accounting for the process that wrote the event, so a resumed run
+// records only the steps after its resume, and a replay has no retry policy.
 func Replay(ctx context.Context, store EventReader, runID string) (runtime.RunResult, error) {
 	events, err := store.Events(ctx, runID)
 	if err != nil {
@@ -57,7 +60,7 @@ func Replay(ctx context.Context, store EventReader, runID string) (runtime.RunRe
 		return runtime.RunResult{}, fmt.Errorf("replay: run %s: %w", runID, err)
 	}
 
-	if result != original {
+	if !sameOutcome(result, original) {
 		return runtime.RunResult{}, &MismatchError{
 			Seq:    finishedSeq(events),
 			Detail: fmt.Sprintf("final result differs: recorded %+v, got %+v", original, result),
@@ -65,6 +68,12 @@ func Replay(ctx context.Context, store EventReader, runID string) (runtime.RunRe
 	}
 
 	return result, nil
+}
+
+// sameOutcome reports whether a and b describe the same result of a run,
+// ignoring Usage and Retries (see Replay).
+func sameOutcome(a, b runtime.RunResult) bool {
+	return a.RunID == b.RunID && a.Content == b.Content && a.Steps == b.Steps && a.Status == b.Status
 }
 
 func runStartedPrompt(events []recorder.Event) (string, error) {

@@ -344,3 +344,78 @@ func (t *trackingTool) Execute(ctx context.Context, call tools.ToolCall) (tools.
 	}
 	return out, err
 }
+
+// parkedProvider reports when its first call starts, then holds that call
+// open until release is closed, ignoring ctx. It stands in for a process that
+// is stuck in (or killed during) the first model call.
+type parkedProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+var errParked = errors.New("parked provider released")
+
+func (p *parkedProvider) Complete(ctx context.Context, req provider.Request) (provider.ModelResponse, error) {
+	close(p.started)
+	<-p.release
+	return provider.ModelResponse{}, errParked
+}
+
+// TestRuntime_Run_CheckpointsBeforeFirstModelCall guards against a crash during
+// step 0: before this checkpoint existed, such a run had nothing to resume from.
+func TestRuntime_Run_CheckpointsBeforeFirstModelCall(t *testing.T) {
+	tests := []struct {
+		name       string
+		prompt     string
+		wantResume string
+	}{
+		{name: "plain prompt", prompt: "hello", wantResume: "recovered answer"},
+		{name: "prompt with unicode", prompt: "héllo wörld ✓", wantResume: "recovered answer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := &memoryBackend{}
+			rec := recorder.NewRecorder(backend)
+			const runID = "run-crash-step0"
+
+			parked := &parkedProvider{started: make(chan struct{}), release: make(chan struct{})}
+			rt := NewRuntime(parked, newRegistry(t), rec, WithCheckpoints(backend), WithEventReader(backend))
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, _ = rt.Run(context.Background(), runID, tt.prompt)
+			}()
+			<-parked.started
+
+			// The first model call is in flight and has not returned: this is
+			// the crash window. A checkpoint must already exist.
+			cp, found, err := backend.LatestCheckpoint(context.Background(), runID)
+			if err != nil {
+				t.Fatalf("LatestCheckpoint() error: %v", err)
+			}
+			if !found {
+				t.Fatal("no checkpoint while the first model call is in flight, so a crash here is not resumable")
+			}
+			if cp.Step != 0 || cp.Request.Prompt != tt.prompt {
+				t.Fatalf("checkpoint = step %d prompt %q, want step 0 prompt %q", cp.Step, cp.Request.Prompt, tt.prompt)
+			}
+
+			close(parked.release)
+			<-done
+
+			// A fresh runtime, as after a restart, resumes the run to completion.
+			fresh := NewRuntime(
+				provider.NewMockProvider([]provider.ModelResponse{{Content: tt.wantResume}}, nil),
+				newRegistry(t), rec, WithCheckpoints(backend), WithEventReader(backend))
+			res, err := fresh.Resume(context.Background(), runID)
+			if err != nil {
+				t.Fatalf("Resume() error: %v", err)
+			}
+			if res.Status != "completed" || res.Content != tt.wantResume {
+				t.Fatalf("Resume() = %+v, want completed with %q", res, tt.wantResume)
+			}
+		})
+	}
+}

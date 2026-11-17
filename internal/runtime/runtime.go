@@ -191,7 +191,19 @@ func (r *Runtime) Run(ctx context.Context, runID string, prompt string) (RunResu
 	if err := r.record(ctx, runID, recorder.EventRunStarted, runStartedPayload{Prompt: prompt}); err != nil {
 		return RunResult{}, err
 	}
-	return r.runLoop(ctx, runID, 0, provider.Request{Prompt: prompt}, nil)
+	// Checkpoint the initial request before the first model call. Without it a
+	// crash during step 0 leaves nothing to resume from, and the first model
+	// call is the slowest, so the likeliest place for a crash.
+	req := provider.Request{Prompt: prompt}
+	if err := r.saveCheckpoint(ctx, runID, 0, req); err != nil {
+		// A run cancelled right at the start fails this save because ctx is
+		// done. That is a cancellation, not a failure, so finish it as one.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return r.finishCancelled(ctx, runID, 0, req, ctxErr)
+		}
+		return RunResult{}, err
+	}
+	return r.runLoop(ctx, runID, 0, req, nil)
 }
 
 // Resume continues runID from its latest checkpoint: it loads the saved
