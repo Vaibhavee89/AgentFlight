@@ -179,14 +179,15 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (ModelRes
 	return toModelResponse(wire), nil
 }
 
-// toolUseID is the id given to the i-th tool call of a step. A Request does
-// not carry the ids the API issued, so the ids are derived from position,
-// which keeps the request identical when a run is resumed or replayed. The
-// API only needs each tool_result to match a tool_use id in the turn before it.
-func toolUseID(i int) string { return fmt.Sprintf("toolu_%d", i) }
+// toolUseID is the id given to the i-th tool call of the n-th exchange. A
+// Request does not carry the ids the API issued, so the ids are derived from
+// position, which keeps the request identical when a run is resumed or
+// replayed. They are unique across the conversation, and each tool_result
+// matches the tool_use in the turn before it.
+func toolUseID(exchange, i int) string { return fmt.Sprintf("toolu_%d_%d", exchange, i) }
 
-// buildAnthropicRequest converts req into one Messages API request. Tool
-// results from the prior step are sent the way the API requires: an assistant
+// buildAnthropicRequest converts req into one Messages API request. Each
+// earlier step's tool exchange is sent the way the API requires: an assistant
 // turn holding the tool_use blocks, then a user turn holding the matching
 // tool_result blocks. A failed tool is reported with is_error so the model can
 // react to it.
@@ -195,11 +196,11 @@ func buildAnthropicRequest(model string, specs []anthropicTool, req Request) ant
 		{Role: "user", Content: []anthropicContent{{Type: "text", Text: req.Prompt}}},
 	}
 
-	if len(req.ToolResults) > 0 {
-		uses := make([]anthropicContent, 0, len(req.ToolResults))
-		results := make([]anthropicContent, 0, len(req.ToolResults))
-		for i, tr := range req.ToolResults {
-			id := toolUseID(i)
+	for n, exchange := range req.Exchanges() {
+		uses := make([]anthropicContent, 0, len(exchange))
+		results := make([]anthropicContent, 0, len(exchange))
+		for i, tr := range exchange {
+			id := toolUseID(n, i)
 			input := tr.Call.Input
 			if len(input) == 0 {
 				input = json.RawMessage(`{}`)

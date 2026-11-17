@@ -183,18 +183,18 @@ func toolArguments(args string) json.RawMessage {
 	return quoted
 }
 
-// buildOpenAIRequest converts req into one chat completions request. Tool
-// results from the prior step go in as an assistant turn holding the tool
+// buildOpenAIRequest converts req into one chat completions request. Each
+// earlier step's tool exchange goes in as an assistant turn holding the tool
 // calls, then one role "tool" message per result. Ids are derived from
 // position so a resumed or replayed run sends an identical request.
 func buildOpenAIRequest(model string, specs []openAITool, req Request) openAIRequest {
 	messages := []openAIMessage{{Role: "user", Content: req.Prompt}}
 
-	if len(req.ToolResults) > 0 {
-		calls := make([]openAIToolCall, 0, len(req.ToolResults))
-		results := make([]openAIMessage, 0, len(req.ToolResults))
-		for i, tr := range req.ToolResults {
-			id := toolUseID(i)
+	for n, exchange := range req.Exchanges() {
+		calls := make([]openAIToolCall, 0, len(exchange))
+		results := make([]openAIMessage, 0, len(exchange))
+		for i, tr := range exchange {
+			id := toolUseID(n, i)
 			args := string(tr.Call.Input)
 			if args == "" {
 				args = "{}"

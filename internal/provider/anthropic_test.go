@@ -174,7 +174,7 @@ func TestBuildAnthropicRequest(t *testing.T) {
 				{Call: tools.ToolCall{Name: "echo", Input: json.RawMessage(`{"text":"x"}`)}, Output: tools.ToolOutput{Result: "x"}},
 			}},
 			wantRoles:    []string{"user", "assistant", "user"},
-			wantResultID: "toolu_0",
+			wantResultID: "toolu_0_0",
 		},
 		{
 			name: "failed tool is flagged is_error",
@@ -183,7 +183,7 @@ func TestBuildAnthropicRequest(t *testing.T) {
 			}},
 			wantRoles:    []string{"user", "assistant", "user"},
 			wantErrFlag:  true,
-			wantResultID: "toolu_0",
+			wantResultID: "toolu_0_0",
 		},
 	}
 

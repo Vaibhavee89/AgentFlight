@@ -364,3 +364,65 @@ func TestReplay_ResumedRunVerifies(t *testing.T) {
 		})
 	}
 }
+
+// TestReplay_LongRunWithFailedToolInHistory covers a run whose later requests
+// carry earlier steps, one of which failed. The recorded requests hold the
+// error text, and replay has to rebuild them identically.
+func TestReplay_LongRunWithFailedToolInHistory(t *testing.T) {
+	tests := []struct {
+		name         string
+		wantMismatch bool
+		tamper       func(t *testing.T, store *memoryStore)
+	}{
+		{name: "untouched run replays"},
+		{
+			name:         "history changed in a recorded request is caught",
+			wantMismatch: true,
+			tamper: func(t *testing.T, store *memoryStore) {
+				// Occurrence 3 is the last request, which carries the whole history.
+				tamperPayload(t, store, "run-long", recorder.EventModelRequest, 3, func(m map[string]any) {
+					m["History"] = []any{}
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &memoryStore{}
+			rec := recorder.NewRecorder(store)
+
+			reg := newEchoRegistry(t)
+			if err := reg.Register(builtin.NewCalculator()); err != nil {
+				t.Fatalf("register calculator: %v", err)
+			}
+			echo := func(text string) tools.ToolCall {
+				return tools.ToolCall{Name: "echo", Input: json.RawMessage(`{"text":"` + text + `"}`)}
+			}
+			divZero := tools.ToolCall{Name: "calculator", Input: json.RawMessage(`{"operation":"div","a":1,"b":0}`)}
+			p := provider.NewMockProvider([]provider.ModelResponse{
+				{ToolCalls: []tools.ToolCall{echo("one")}},
+				{ToolCalls: []tools.ToolCall{divZero}},
+				{ToolCalls: []tools.ToolCall{echo("three")}},
+				{Content: "done"},
+			}, nil)
+			rt := runtime.NewRuntime(p, reg, rec, runtime.WithMaxSteps(10))
+			if _, err := rt.Run(context.Background(), "run-long", "prompt"); err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+
+			if tt.tamper != nil {
+				tt.tamper(t, store)
+			}
+
+			_, err := Replay(context.Background(), store, "run-long")
+			var mismatch *MismatchError
+			if got := errors.As(err, &mismatch); got != tt.wantMismatch {
+				t.Fatalf("Replay() error = %v, want mismatch = %v", err, tt.wantMismatch)
+			}
+			if !tt.wantMismatch && err != nil {
+				t.Fatalf("Replay() error: %v", err)
+			}
+		})
+	}
+}

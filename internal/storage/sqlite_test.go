@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -163,5 +164,44 @@ func TestSQLiteStore_ResaveCheckpointSameStep(t *testing.T) {
 	}
 	if got.Request.Prompt != "hi again" {
 		t.Fatalf("latest prompt = %q, want the re-saved request", got.Request.Prompt)
+	}
+}
+
+// A tool that failed leaves an error in the checkpoint's request. That used to
+// encode as {} and fail to decode, so resuming such a run could not even load
+// its checkpoint. The history of earlier steps must survive the round trip too.
+func TestSQLiteStore_CheckpointWithFailedToolAndHistory(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	failed := provider.ToolResult{Call: tools.ToolCall{Name: "calculator"}, Err: errors.New("division by zero")}
+	ok := provider.ToolResult{Call: tools.ToolCall{Name: "echo"}, Output: tools.ToolOutput{Result: "hi"}}
+	cp := recovery.Checkpoint{
+		RunID: "run-err",
+		Step:  3,
+		Request: provider.Request{
+			Prompt:      "p",
+			History:     []provider.Exchange{{ToolResults: []provider.ToolResult{failed}}},
+			ToolResults: []provider.ToolResult{ok},
+		},
+		SavedAt: time.Now().UTC(),
+	}
+	if err := store.SaveCheckpoint(ctx, cp); err != nil {
+		t.Fatalf("SaveCheckpoint() error: %v", err)
+	}
+
+	got, found, err := store.LatestCheckpoint(ctx, "run-err")
+	if err != nil || !found {
+		t.Fatalf("LatestCheckpoint() = found %v, error %v, want it loaded", found, err)
+	}
+	if len(got.Request.History) != 1 || len(got.Request.History[0].ToolResults) != 1 {
+		t.Fatalf("History = %+v, want one earlier step", got.Request.History)
+	}
+	earlier := got.Request.History[0].ToolResults[0]
+	if earlier.Call.Name != "calculator" || earlier.Err == nil || earlier.Err.Error() != "division by zero" {
+		t.Fatalf("earlier step result = %+v, want the failed calculator call with its message", earlier)
+	}
+	if got.Request.ToolResults[0].Output.Result != "hi" {
+		t.Fatalf("latest ToolResults = %+v, want the echo result", got.Request.ToolResults)
 	}
 }

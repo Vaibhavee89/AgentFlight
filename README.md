@@ -116,6 +116,29 @@ cancelled and then resumed. Then open <http://127.0.0.1:8080/ui/runs>.
 The browser suite drives the real app: it creates a run, watches it finish,
 opens its events, and verifies its replay. Run it with `make e2e`.
 
+## Conversation history
+
+Each model call gets the whole conversation so far: the prompt, the tool calls
+and results of every earlier step in `Request.History`, and the latest step's in
+`Request.ToolResults`. The history is part of the checkpoint, so a resumed run
+gives the model the same conversation it had before the interruption. Both the
+Claude and the OpenAI-compatible providers send it as alternating assistant and
+tool-result turns, with tool call ids that are unique across the conversation.
+
+Two things to know:
+
+- The recorded `model_request` event carries the full history, so the log grows
+  with the square of the number of steps. That is fine at the default limit of
+  10 steps and is the reason a token and cost budget per run is on the roadmap.
+- The assistant's text between tool calls is not part of the history, only the
+  tool calls and their results.
+
+A failed tool is stored in a request as its error message. It used to be stored
+as `{}`, which could not be read back, so a checkpoint holding a failed tool
+result could not be loaded and the run could not be resumed. Recordings made
+before this change that contain a failed tool, or more than two model calls, will
+not replay: their requests were written in the old shape.
+
 ## Idempotency keys
 
 Resume skips every tool call whose result is already in the log. One window is

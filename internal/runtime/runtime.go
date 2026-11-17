@@ -271,7 +271,7 @@ func (r *Runtime) runLoop(ctx context.Context, runID string, startStep int, req 
 
 		toolResults, cancelled, cancelErr := r.runToolCalls(ctx, runID, step, resp.ToolCalls, recovered)
 		if cancelled {
-			nextReq := provider.Request{Prompt: req.Prompt, ToolResults: toolResults}
+			nextReq := nextRequest(req, toolResults)
 			return r.finishCancelled(ctx, runID, step+1, nextReq, cancelErr)
 		}
 
@@ -292,12 +292,23 @@ func (r *Runtime) runLoop(ctx context.Context, runID string, startStep int, req 
 			return result, nil
 		}
 
-		nextReq := provider.Request{Prompt: req.Prompt, ToolResults: toolResults}
+		nextReq := nextRequest(req, toolResults)
 		if err := r.saveCheckpoint(ctx, runID, step+1, nextReq); err != nil {
 			return RunResult{}, err
 		}
 		req = nextReq
 	}
+}
+
+// nextRequest builds the request for the step after req, given the tool results
+// that step produced. req's own tool results move into History, so the model
+// keeps seeing everything it did earlier in the run, not just the latest step.
+func nextRequest(req provider.Request, results []provider.ToolResult) provider.Request {
+	next := provider.Request{Prompt: req.Prompt, History: req.History, ToolResults: results}
+	if len(req.ToolResults) > 0 {
+		next.History = append(append([]provider.Exchange(nil), req.History...), provider.Exchange{ToolResults: req.ToolResults})
+	}
+	return next
 }
 
 // runToolCalls executes calls concurrently, skipping any whose result is
