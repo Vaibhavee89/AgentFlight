@@ -204,6 +204,12 @@ send. A client disconnect ends it immediately.
 - `--cors-origin http://localhost:5173` allows one browser origin, for local
   Vite development. The default is off.
 - `--bench-dir docs` is where `/bench/` reads from.
+- `--provider anthropic --model claude-opus-5-5` runs the agent on a real Claude
+  model instead of the offline echo mock. It needs `ANTHROPIC_API_KEY` in the
+  environment. The `echo` and `calculator` tools are advertised to the model,
+  and every step lands in the same event log, so retries, resume and replay
+  work as they do in mock mode. Try the prompt "What is 1234 * 5678? Use the
+  calculator."
 - `--demo-faults 0.2 --mock-latency 500ms` makes a fraction of tool calls hang
   so the per-tool timeout and retries show in live runs. Faults are seeded with
   `--demo-seed`. Model calls are not faulted, because the runtime does not

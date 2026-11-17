@@ -33,6 +33,7 @@ func (calculatorTool) Spec() tools.ToolSpec {
 	return tools.ToolSpec{
 		Name:        "calculator",
 		Description: "Performs add, sub, mul, or div on two numeric operands a and b.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"operation":{"type":"string","enum":["add","sub","mul","div"]},"a":{"type":"number"},"b":{"type":"number"}},"required":["operation","a","b"]}`),
 	}
 }
 

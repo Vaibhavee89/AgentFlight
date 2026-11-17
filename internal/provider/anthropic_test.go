@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Vaibhavee89/agentflight/internal/policy"
+	"github.com/Vaibhavee89/agentflight/internal/tools"
 )
 
 func TestAnthropicProvider_Complete_SuccessWithToolUse(t *testing.T) {
@@ -150,5 +152,116 @@ func TestAnthropicProvider_Complete_ContextCancelledDuringSlowRequest(t *testing
 	}
 	if elapsed > 200*time.Millisecond {
 		t.Fatalf("Complete() took %v, want well under the server's 5s delay", elapsed)
+	}
+}
+
+func TestBuildAnthropicRequest(t *testing.T) {
+	tests := []struct {
+		name         string
+		req          Request
+		wantRoles    []string
+		wantErrFlag  bool
+		wantResultID string
+	}{
+		{
+			name:      "prompt only",
+			req:       Request{Prompt: "hi"},
+			wantRoles: []string{"user"},
+		},
+		{
+			name: "tool result is preceded by its tool_use turn",
+			req: Request{Prompt: "hi", ToolResults: []ToolResult{
+				{Call: tools.ToolCall{Name: "echo", Input: json.RawMessage(`{"text":"x"}`)}, Output: tools.ToolOutput{Result: "x"}},
+			}},
+			wantRoles:    []string{"user", "assistant", "user"},
+			wantResultID: "toolu_0",
+		},
+		{
+			name: "failed tool is flagged is_error",
+			req: Request{Prompt: "hi", ToolResults: []ToolResult{
+				{Call: tools.ToolCall{Name: "calculator"}, Err: errors.New("boom")},
+			}},
+			wantRoles:    []string{"user", "assistant", "user"},
+			wantErrFlag:  true,
+			wantResultID: "toolu_0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildAnthropicRequest("m", nil, tt.req)
+
+			var roles []string
+			for _, m := range got.Messages {
+				roles = append(roles, m.Role)
+			}
+			if strings.Join(roles, ",") != strings.Join(tt.wantRoles, ",") {
+				t.Fatalf("roles = %v, want %v", roles, tt.wantRoles)
+			}
+			if tt.wantResultID == "" {
+				return
+			}
+			use := got.Messages[1].Content[0]
+			result := got.Messages[2].Content[0]
+			if use.Type != "tool_use" || use.ID != tt.wantResultID {
+				t.Fatalf("tool_use block = %+v, want id %q", use, tt.wantResultID)
+			}
+			if result.Type != "tool_result" || result.ToolUseID != use.ID {
+				t.Fatalf("tool_result block = %+v, want tool_use_id %q", result, use.ID)
+			}
+			if result.IsError != tt.wantErrFlag {
+				t.Fatalf("is_error = %v, want %v", result.IsError, tt.wantErrFlag)
+			}
+		})
+	}
+}
+
+func TestAnthropicProvider_Complete_SendsToolsAndHandlesRefusal(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantRefusal bool
+	}{
+		{name: "normal answer", body: `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`},
+		{name: "refusal", body: `{"content":[],"stop_reason":"refusal","usage":{"input_tokens":1,"output_tokens":0}}`, wantRefusal: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sent struct {
+				Tools []struct {
+					Name        string          `json:"name"`
+					InputSchema json.RawMessage `json:"input_schema"`
+				} `json:"tools"`
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+
+			specs := []tools.ToolSpec{
+				{Name: "echo", Description: "d", InputSchema: json.RawMessage(`{"type":"object"}`)},
+				{Name: "noschema"},
+			}
+			p := NewAnthropicProvider("m",
+				WithAnthropicBaseURL(srv.URL), WithAnthropicClient(srv.Client()), WithAnthropicTools(specs))
+
+			_, err := p.Complete(context.Background(), Request{Prompt: "hi"})
+			if got := errors.Is(err, ErrAnthropicRefusal); got != tt.wantRefusal {
+				t.Fatalf("errors.Is(err, ErrAnthropicRefusal) = %v, want %v (err = %v)", got, tt.wantRefusal, err)
+			}
+			if !tt.wantRefusal && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(sent.Tools) != 2 || sent.Tools[0].Name != "echo" {
+				t.Fatalf("sent tools = %+v, want echo and noschema", sent.Tools)
+			}
+			if string(sent.Tools[1].InputSchema) != `{"type":"object"}` {
+				t.Fatalf("default schema = %s, want empty object schema", sent.Tools[1].InputSchema)
+			}
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,8 +18,12 @@ import (
 const (
 	defaultAnthropicBaseURL = "https://api.anthropic.com"
 	anthropicVersion        = "2023-06-01"
-	anthropicMaxTokens      = 1024
+	anthropicMaxTokens      = 4096
 )
+
+// ErrAnthropicRefusal indicates the model declined the request
+// (stop_reason "refusal"). Retrying the same request will not help.
+var ErrAnthropicRefusal = errors.New("anthropic: model refused the request")
 
 // AnthropicProvider implements ModelProvider against the Anthropic Messages
 // API using only net/http (no SDK).
@@ -27,6 +32,7 @@ type AnthropicProvider struct {
 	model   string
 	baseURL string
 	client  *http.Client
+	tools   []anthropicTool
 }
 
 // AnthropicOption configures an AnthropicProvider.
@@ -46,6 +52,21 @@ func WithAnthropicBaseURL(url string) AnthropicOption {
 // WithAnthropicClient overrides the *http.Client used to send requests.
 func WithAnthropicClient(c *http.Client) AnthropicOption {
 	return func(p *AnthropicProvider) { p.client = c }
+}
+
+// WithAnthropicTools advertises specs to the model so it can request them.
+// A spec with no InputSchema is sent with an empty object schema.
+func WithAnthropicTools(specs []tools.ToolSpec) AnthropicOption {
+	return func(p *AnthropicProvider) {
+		p.tools = make([]anthropicTool, 0, len(specs))
+		for _, spec := range specs {
+			schema := spec.InputSchema
+			if len(schema) == 0 {
+				schema = json.RawMessage(`{"type":"object"}`)
+			}
+			p.tools = append(p.tools, anthropicTool{Name: spec.Name, Description: spec.Description, InputSchema: schema})
+		}
+	}
 }
 
 // NewAnthropicProvider builds an AnthropicProvider for model, reading the
@@ -68,6 +89,13 @@ type anthropicRequest struct {
 	Model     string             `json:"model"`
 	MaxTokens int                `json:"max_tokens"`
 	Messages  []anthropicMessage `json:"messages"`
+	Tools     []anthropicTool    `json:"tools,omitempty"`
+}
+
+type anthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
 }
 
 type anthropicMessage struct {
@@ -85,11 +113,13 @@ type anthropicContent struct {
 	Input     json.RawMessage `json:"input,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   string          `json:"content,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
 }
 
 type anthropicResponse struct {
-	Content []anthropicContent `json:"content"`
-	Usage   anthropicUsage     `json:"usage"`
+	Content    []anthropicContent `json:"content"`
+	StopReason string             `json:"stop_reason"`
+	Usage      anthropicUsage     `json:"usage"`
 }
 
 type anthropicUsage struct {
@@ -109,7 +139,7 @@ type anthropicErrorResponse struct {
 // are wrapped so policy.Classify treats them as Retryable; other 4xx
 // responses are wrapped so policy.Classify treats them as Terminal.
 func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (ModelResponse, error) {
-	body, err := json.Marshal(buildAnthropicRequest(p.model, req))
+	body, err := json.Marshal(buildAnthropicRequest(p.model, p.tools, req))
 	if err != nil {
 		return ModelResponse{}, fmt.Errorf("anthropic: encode request: %w", err)
 	}
@@ -142,33 +172,54 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (ModelRes
 		return ModelResponse{}, fmt.Errorf("anthropic: decode response: %w", err)
 	}
 
+	if wire.StopReason == "refusal" {
+		return ModelResponse{}, fmt.Errorf("%w", ErrAnthropicRefusal)
+	}
+
 	return toModelResponse(wire), nil
 }
 
+// toolUseID is the id given to the i-th tool call of a step. A Request does
+// not carry the ids the API issued, so the ids are derived from position,
+// which keeps the request identical when a run is resumed or replayed. The
+// API only needs each tool_result to match a tool_use id in the turn before it.
+func toolUseID(i int) string { return fmt.Sprintf("toolu_%d", i) }
+
 // buildAnthropicRequest converts req into one Messages API request. Tool
-// results from a prior step, if any, are sent as a follow-up user message.
-func buildAnthropicRequest(model string, req Request) anthropicRequest {
+// results from the prior step are sent the way the API requires: an assistant
+// turn holding the tool_use blocks, then a user turn holding the matching
+// tool_result blocks. A failed tool is reported with is_error so the model can
+// react to it.
+func buildAnthropicRequest(model string, specs []anthropicTool, req Request) anthropicRequest {
 	messages := []anthropicMessage{
 		{Role: "user", Content: []anthropicContent{{Type: "text", Text: req.Prompt}}},
 	}
 
 	if len(req.ToolResults) > 0 {
-		blocks := make([]anthropicContent, 0, len(req.ToolResults))
-		for _, tr := range req.ToolResults {
-			content := tr.Output.Result
-			if tr.Err != nil {
-				content = "error: " + tr.Err.Error()
+		uses := make([]anthropicContent, 0, len(req.ToolResults))
+		results := make([]anthropicContent, 0, len(req.ToolResults))
+		for i, tr := range req.ToolResults {
+			id := toolUseID(i)
+			input := tr.Call.Input
+			if len(input) == 0 {
+				input = json.RawMessage(`{}`)
 			}
-			blocks = append(blocks, anthropicContent{
-				Type:      "tool_result",
-				ToolUseID: tr.Call.Name,
-				Content:   content,
-			})
+			uses = append(uses, anthropicContent{Type: "tool_use", ID: id, Name: tr.Call.Name, Input: input})
+
+			block := anthropicContent{Type: "tool_result", ToolUseID: id, Content: tr.Output.Result}
+			if tr.Err != nil {
+				block.Content = "error: " + tr.Err.Error()
+				block.IsError = true
+			}
+			results = append(results, block)
 		}
-		messages = append(messages, anthropicMessage{Role: "user", Content: blocks})
+		messages = append(messages,
+			anthropicMessage{Role: "assistant", Content: uses},
+			anthropicMessage{Role: "user", Content: results},
+		)
 	}
 
-	return anthropicRequest{Model: model, MaxTokens: anthropicMaxTokens, Messages: messages}
+	return anthropicRequest{Model: model, MaxTokens: anthropicMaxTokens, Messages: messages, Tools: specs}
 }
 
 // toModelResponse maps a Messages API response's text and tool_use content

@@ -24,6 +24,7 @@ func (echoTool) Spec() tools.ToolSpec {
 	return tools.ToolSpec{
 		Name:        "echo",
 		Description: "Returns the given text unchanged.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string","description":"Text to return."}},"required":["text"]}`),
 	}
 }
 
