@@ -33,6 +33,11 @@ web/dist/*
 !web/dist/index.html
 web/*.tsbuildinfo
 
+# SQLite databases from local runs (serve --db, demos, tests)
+*.db
+*.db-shm
+*.db-wal
+
 # demo database
 /demo.db*
 
