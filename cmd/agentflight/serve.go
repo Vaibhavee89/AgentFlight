@@ -29,8 +29,9 @@ func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", "127.0.0.1:8080", "address to listen on")
 	dbPath := fs.String("db", "agentflight.db", "path to the SQLite event store")
-	providerName := fs.String("provider", "mock", "model backend: mock (offline echo) or anthropic (needs ANTHROPIC_API_KEY)")
-	model := fs.String("model", "claude-opus-5-5", "Claude model id, used with --provider anthropic")
+	providerName := fs.String("provider", "mock", "model backend: mock (offline echo), anthropic (needs ANTHROPIC_API_KEY), or openai-compat (Ollama, LM Studio, vLLM)")
+	model := fs.String("model", "", "model id; defaults to claude-opus-5-5 for anthropic and qwen2.5:3b for openai-compat")
+	baseURL := fs.String("base-url", "http://localhost:11434/v1", "API root for --provider openai-compat (default is Ollama); set OPENAI_API_KEY if the server needs a key")
 	mockLatency := fs.Duration("mock-latency", 0, "delay per mock model call")
 	shutdownTimeout := fs.Duration("shutdown-timeout", 15*time.Second, "how long to wait for active runs on shutdown")
 	benchDir := fs.String("bench-dir", "docs", "directory with harnessbench output, served under /bench/")
@@ -44,9 +45,14 @@ func runServe(args []string) {
 		os.Exit(2)
 	}
 
-	if *providerName != "mock" && *providerName != "anthropic" {
-		fmt.Fprintf(os.Stderr, "--provider must be mock or anthropic, got %q\n", *providerName)
+	switch *providerName {
+	case "mock", "anthropic", "openai-compat":
+	default:
+		fmt.Fprintf(os.Stderr, "--provider must be mock, anthropic or openai-compat, got %q\n", *providerName)
 		os.Exit(2)
+	}
+	if *model == "" {
+		*model = map[string]string{"anthropic": "claude-opus-5-5", "openai-compat": "qwen2.5:3b"}[*providerName]
 	}
 	if *providerName == "anthropic" && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		fmt.Fprintln(os.Stderr, "--provider anthropic needs the ANTHROPIC_API_KEY environment variable")
@@ -96,6 +102,14 @@ func runServe(args []string) {
 		}
 	}
 
+	if *providerName == "openai-compat" {
+		newProvider = func() runtime.ModelProvider {
+			return provider.NewOpenAICompatProvider(*baseURL, *model,
+				provider.WithOpenAICompatTools(reg.Specs()),
+				provider.WithOpenAICompatAPIKey(os.Getenv("OPENAI_API_KEY")))
+		}
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	srv := api.NewServer(api.Config{
 		Store:      store,
@@ -113,7 +127,7 @@ func runServe(args []string) {
 		fmt.Fprintf(os.Stderr, "listen on %s: %v\n", *addr, err)
 		os.Exit(1)
 	}
-	logger.Info("serving", "addr", ln.Addr().String(), "db", *dbPath, "provider", *providerName, "demo_faults", *demoFaults)
+	logger.Info("serving", "addr", ln.Addr().String(), "db", *dbPath, "provider", *providerName, "model", *model, "demo_faults", *demoFaults)
 
 	if err := api.Serve(ctx, ln, srv, *shutdownTimeout); err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)

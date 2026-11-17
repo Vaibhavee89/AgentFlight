@@ -210,6 +210,10 @@ send. A client disconnect ends it immediately.
   and every step lands in the same event log, so retries, resume and replay
   work as they do in mock mode. Try the prompt "What is 1234 * 5678? Use the
   calculator."
+- `--provider openai-compat --model qwen2.5:3b` runs the agent on an open model
+  served by Ollama (the default `--base-url` is `http://localhost:11434/v1`).
+  Any server that speaks the OpenAI chat completions API works, such as LM
+  Studio, vLLM or llama.cpp. Set `OPENAI_API_KEY` if the server needs a key.
 - `--demo-faults 0.2 --mock-latency 500ms` makes a fraction of tool calls hang
   so the per-tool timeout and retries show in live runs. Faults are seeded with
   `--demo-seed`. Model calls are not faulted, because the runtime does not
