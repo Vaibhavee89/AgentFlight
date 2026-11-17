@@ -76,9 +76,10 @@ type runErrorPayload struct {
 }
 
 type toolCallPayload struct {
-	Step  int            `json:"step"`
-	Index int            `json:"index"`
-	Call  tools.ToolCall `json:"call"`
+	Step           int            `json:"step"`
+	Index          int            `json:"index"`
+	Call           tools.ToolCall `json:"call"`
+	IdempotencyKey string         `json:"idempotency_key,omitempty"`
 }
 
 type toolResultPayload struct {
@@ -334,7 +335,9 @@ func (r *Runtime) runToolCalls(ctx context.Context, runID string, step int, call
 // outcome at results[index]. It is safe to run concurrently with other
 // calls writing to disjoint indices of the same slice.
 func (r *Runtime) runSingleToolCall(ctx context.Context, runID string, step, index int, call tools.ToolCall, results []provider.ToolResult) {
-	if err := r.record(ctx, runID, recorder.EventToolCall, toolCallPayload{Step: step, Index: index, Call: call}); err != nil {
+	call.IdempotencyKey = idempotencyKey(runID, step, index, call)
+
+	if err := r.record(ctx, runID, recorder.EventToolCall, toolCallPayload{Step: step, Index: index, Call: call, IdempotencyKey: call.IdempotencyKey}); err != nil {
 		r.logger.ErrorContext(ctx, "failed to record tool_call", "run_id", runID, "step", step, "index", index, "error", err)
 	}
 

@@ -20,6 +20,14 @@ type ToolSpec struct {
 type ToolCall struct {
 	Name  string
 	Input json.RawMessage
+
+	// IdempotencyKey identifies this one logical operation. The runtime fills it
+	// in, and it stays the same when the call is retried by the policy or
+	// re-executed after a crash and resume, so a tool or the system behind it
+	// can recognise a repeat and skip the side effect. It is empty for calls made
+	// outside a run. It is not part of the JSON encoding, so recorded requests
+	// and checkpoints are unchanged; the runtime records it on tool_call events.
+	IdempotencyKey string `json:"-"`
 }
 
 // ToolOutput is the result of executing a tool.

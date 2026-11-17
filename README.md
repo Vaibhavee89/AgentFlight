@@ -116,6 +116,36 @@ cancelled and then resumed. Then open <http://127.0.0.1:8080/ui/runs>.
 The browser suite drives the real app: it creates a run, watches it finish,
 opens its events, and verifies its replay. Run it with `make e2e`.
 
+## Idempotency keys
+
+Resume skips every tool call whose result is already in the log. One window is
+left: a tool performs its side effect, the process dies, and the result is never
+recorded. Resume then has no result, so it runs the call again. The same thing
+happens when the policy retries a call that timed out after it had already acted.
+
+So every tool call carries an `IdempotencyKey`, built from the run id, the step,
+the position in the step, and a digest of the tool name and arguments. It is the
+same on every attempt: policy retries and a call re-run after resume get the key
+the first attempt had. The key is on the `tool_call` event in the log, and it is
+passed to MCP tools in `_meta` under `agentflight/idempotency_key`.
+
+The runtime can only supply the key. The tool, or the system behind it, has to
+honour it. The built-in `send_message` tool shows how: its "send" is one
+`INSERT ... ON CONFLICT DO NOTHING` into an `effects` table keyed by the
+idempotency key, so a repeat records nothing and returns the same answer. It
+refuses to act on a call that has no key.
+
+What this does and does not give you:
+
+- A tool that dedupes on the key runs its effect once, even though the call can
+  execute more than once. That is at-least-once execution with idempotent
+  effects. The runtime does not promise that a tool body runs exactly once.
+- If resume makes the model decide again and it asks for a different call at the
+  same position, that call has a different digest and so a different key. It is
+  treated as a new operation, which is right, but it means the earlier attempt's
+  effect is not undone.
+- A tool that ignores the key can still repeat its effect.
+
 ## Quickstart (mock mode, no API key)
 
 ```bash

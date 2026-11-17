@@ -28,6 +28,10 @@ type Tool struct {
 	schema  json.RawMessage
 }
 
+// IdempotencyKeyMeta is the _meta field under which Execute passes a call's
+// idempotency key to the MCP server.
+const IdempotencyKeyMeta = "agentflight/idempotency_key"
+
 // newTool wraps def, encoding its input schema once so Spec stays infallible.
 func newTool(session *mcpsdk.ClientSession, def *mcpsdk.Tool) (*Tool, error) {
 	schema, err := json.Marshal(def.InputSchema)
@@ -49,6 +53,11 @@ func (t *Tool) Execute(ctx context.Context, call tools.ToolCall) (tools.ToolOutp
 	params := &mcpsdk.CallToolParams{Name: t.def.Name}
 	if len(call.Input) > 0 {
 		params.Arguments = json.RawMessage(call.Input)
+	}
+	if call.IdempotencyKey != "" {
+		// MCP has no idempotency field of its own; _meta is the protocol's
+		// extension point, so a server that cares can read the key from there.
+		params.Meta = mcpsdk.Meta{IdempotencyKeyMeta: call.IdempotencyKey}
 	}
 
 	res, err := t.session.CallTool(ctx, params)

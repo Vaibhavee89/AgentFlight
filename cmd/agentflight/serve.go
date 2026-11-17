@@ -79,6 +79,11 @@ func runServe(args []string) {
 		os.Exit(1)
 	}
 
+	if err := reg.Register(builtin.NewSendMessage(store)); err != nil {
+		fmt.Fprintf(os.Stderr, "register tools: %v\n", err)
+		os.Exit(1)
+	}
+
 	var toolExec runtime.ToolExecutor = reg
 	var newPolicy func() policy.Policy
 	if *demoFaults > 0 {
@@ -87,7 +92,7 @@ func runServe(args []string) {
 			MalformedOutputRate: *demoFaults,
 		}, *demoSeed)
 		newPolicy = func() policy.Policy {
-			return policy.NewDefaultPolicy([]string{"echo", "calculator"},
+			return policy.NewDefaultPolicy([]string{"echo", "calculator", "send_message"},
 				policy.WithMaxAttempts(3),
 				policy.WithTimeout(30*time.Millisecond),
 				policy.WithBackoff(5*time.Millisecond, 50*time.Millisecond),
